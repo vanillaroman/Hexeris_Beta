@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<!--
+  Hexeris — public status page for the operations host.
+
+  It shows service state only; no private metrics. The single source is
+  /api/health, which the reverse proxy forwards to the messenger's /healthz:
+    the fetch succeeded    => the web tier is up
+    healthz 200            => the database is fine  => Operational
+    healthz 503            => the database is down  => Degraded
+    the fetch failed       => Down
+  Detailed metrics live in the protected admin panel at /admin/.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Hexeris — Status</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1015;--bg2:#16171d;--border:#2a2b38;--text:#e2e3ef;--muted:#6b6d82;
+  --accent:#003153;--ok:#2ec27e;--warn:#e0b052;--down:#e05252;
+  --font:system-ui,-apple-system,'Segoe UI',sans-serif
+}
+html,body{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;-webkit-font-smoothing:antialiased}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 16px}
+.wrap{width:100%;max-width:440px;display:flex;flex-direction:column;align-items:center}
+
+.logo{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.logo svg{width:44px;height:44px;border-radius:12px}
+.logo-name{font-size:28px;font-weight:600;letter-spacing:-.4px}
+.tagline{color:var(--muted);font-size:14px;margin-bottom:26px}
+
+/* Overall status pill */
+.status{display:inline-flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:10px 18px;font-size:14px;font-weight:500;margin-bottom:22px;transition:border-color .3s}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* Panel with component rows */
+.card{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:6px 18px;margin-bottom:18px}
+.row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--border)}
+.row:last-child{border-bottom:none}
+.row .lbl{color:var(--muted)}
+.row .val{display:inline-flex;align-items:center;gap:8px;font-variant-numeric:tabular-nums;font-weight:500}
+.rdot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+
+/* Recent-checks strip */
+.hist{width:100%;margin-bottom:22px}
+.hist-head{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin:0 2px 7px}
+.bars{display:flex;gap:3px;height:34px;align-items:flex-end}
+.bars i{flex:1;min-width:2px;border-radius:2px;background:var(--border);transition:background .2s}
+.bars i.ok{background:var(--ok)}
+.bars i.warn{background:var(--warn)}
+.bars i.down{background:var(--down)}
+
+.cta{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;text-decoration:none;padding:12px 22px;border-radius:12px;font-weight:600;font-size:14px;transition:filter .15s}
+.cta:hover{filter:brightness(1.35)}
+.cta-note{color:var(--muted);font-size:12px;margin-top:10px;text-align:center}
+.footer{margin-top:34px;color:var(--muted);font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+      <rect width="100" height="100" rx="22" fill="#ffffff"/>
+      <rect x="22" y="10" width="11" height="56" rx="5.5" fill="#003153"/>
+      <rect x="67" y="28" width="11" height="62" rx="5.5" fill="#003153"/>
+      <path d="M27.5 28 C27.5 14 36 9 50 9 C64 9 72.5 14 72.5 28 L67 28 C67 18 60 14 50 14 C40 14 33 18 33 28 Z" fill="#003153"/>
+      <circle cx="83" cy="82" r="8" fill="#003153"/>
+    </svg>
+    <span class="logo-name">Hexeris</span>
+  </div>
+
+  <p class="tagline">Secure corporate messenger · service status</p>
+
+  <div class="status" id="status">
+    <span class="dot" id="dot"></span>
+    <span id="status-text">Checking…</span>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span class="lbl">API / Web</span>
+      <span class="val"><span class="rdot" id="d-api"></span><span id="v-api">—</span></span>
+    </div>
+    <div class="row">
+      <span class="lbl">Database</span>
+      <span class="val"><span class="rdot" id="d-db"></span><span id="v-db">—</span></span>
+    </div>
+    <div class="row">
+      <span class="lbl">Response time</span>
+      <span class="val" id="v-latency">—</span>
+    </div>
+    <div class="row">
+      <span class="lbl">Last checked</span>
+      <span class="val" id="v-time">—</span>
+    </div>
+  </div>
+
+  <div class="hist">
+    <div class="hist-head"><span>Recent checks</span><span id="hist-info">every minute</span></div>
+    <div class="bars" id="bars"></div>
+  </div>
+
+
+
+  <div class="footer" id="status-host"></div>
+</div>
+
+<script>
+// ── One honest source: /api/health (proxied to the messenger's /healthz) ──
+const OVERALL = {
+  ok:      ['var(--ok)',   'All systems operational'],
+  degraded:['var(--warn)', 'Partial outage — database issue'],
+  down:    ['var(--down)', 'Service unavailable'],
+};
+const SUB = { up:['var(--ok)','OK'], warn:['var(--warn)','Issue'], down:['var(--down)','Unavailable'] };
+(function () {                          // the page names whichever host serves it
+  const el = document.getElementById('status-host');
+  if (el) el.textContent = location.host + ' · status page';
+})();
+const HIST_KEY = 'hex_status_hist';   // kept in this browser, 40 points at most
+const HIST_MAX = 40;
+
+const $ = id => document.getElementById(id);
+function now(){ return new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}); }
+
+function loadHist(){ try{ return JSON.parse(localStorage.getItem(HIST_KEY)) || []; }catch{ return []; } }
+function saveHist(h){ try{ localStorage.setItem(HIST_KEY, JSON.stringify(h.slice(-HIST_MAX))); }catch{} }
+
+function setSub(dotId, valId, sub){
+  const [c,t] = SUB[sub];
+  $(dotId).style.background = c;
+  $(valId).textContent = t;
+  $(valId).style.color = c;
+}
+
+function renderBars(){
+  const h = loadHist();
+  const cls = {ok:'ok', degraded:'warn', down:'down'};
+  $('bars').innerHTML = Array.from({length:HIST_MAX}, (_,i) => {
+    const v = h[h.length - HIST_MAX + i];   // right-aligned
+    return '<i class="'+(v?cls[v]:'')+'"></i>';
+  }).join('');
+}
+
+async function check(){
+  let state = 'down', latency = null;
+  const t0 = performance.now();
+  try{
+    const r = await fetch('/api/health', {cache:'no-store', signal:AbortSignal.timeout(6000)});
+    latency = Math.round(performance.now() - t0);
+    state = r.ok ? 'ok' : 'degraded';       // 200 = database fine, 503 = database down
+  }catch{ state = 'down'; }
+
+  // overall pill
+  const [color, text] = OVERALL[state];
+  $('dot').style.background = color;
+  $('status-text').textContent = text;
+  $('status').style.borderColor = color;
+
+  // sub-rows
+  setSub('d-api', 'v-api', state==='down' ? 'down' : 'up');           // the web tier is up if the fetch arrived
+  setSub('d-db',  'v-db',  state==='ok' ? 'up' : state==='degraded' ? 'down' : 'warn');
+  $('v-latency').textContent = latency==null ? '—' : latency+' ms';
+  $('v-time').textContent = now();
+
+  // history
+  const h = loadHist(); h.push(state); saveHist(h); renderBars();
+}
+
+renderBars();
+check();
+setInterval(check, 60000);
+</script>
+</body>
+</html>
