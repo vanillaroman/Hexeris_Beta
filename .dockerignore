@@ -1,0 +1,16 @@
+# Keep only what the image build needs in the context:
+# go.mod/go.sum, server/ and the static files in web/.
+.git
+.github
+docs
+deploy
+scripts
+*.md
+loadtest.py
+Dockerfile
+docker-compose.yml
+.env
+.env.*
+.dockerignore
+**/*_test.go
+hexeris
