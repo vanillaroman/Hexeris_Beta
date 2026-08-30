@@ -1,16 +1,22 @@
 # Keep only what the image build needs in the context:
 # go.mod/go.sum, server/ and the static files in web/.
+#
+# This is not only about image size. Everything listed here is sent to the
+# daemon before the first instruction runs, so an unfiltered context makes
+# `docker build` feel slow for no reason at all.
 .git
 .github
 docs
 deploy
 scripts
+tests
 *.md
-loadtest.py
 Dockerfile
-docker-compose.yml
+docker-compose*.yml
 .env
 .env.*
 .dockerignore
 **/*_test.go
+# A binary built on the host: same name as the one the image builds, and it
+# has no business travelling into the context.
 hexeris
