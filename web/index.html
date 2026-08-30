@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/svg+xml" href="/LOGO_DARK.svg">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content, viewport-fit=cover">
+<title>Hexeris</title>
+
+<!-- The canvas colour BEFORE a single style has applied. The <link rel=stylesheet>
+     below is render-blocking: until the CSS arrives the browser draws nothing and
+     holds the default canvas, which is white. The app theme is dark, so on a first
+     visit (empty tab → page) that was a white flash.
+     color-scheme reports the canvas colour before styles are even parsed, and the
+     critical rule below fixes it for html/body. -->
+<meta name="color-scheme" content="dark">
+<style>html,body{background:#0f1015}
+html[data-theme="light"],html[data-theme="light"] body{background:#f4f5f8}</style>
+<!-- The theme is applied BEFORE the first paint: otherwise someone who chose
+     light gets a dark flash on every load. An inline script here is forbidden by
+     CSP (script-src without 'unsafe-inline'), so an ordinary file <script> is
+     blocking — and in this case that is exactly what is required. -->
+<script src="/js/theme.js"></script>
+
+<!-- Fonts are SELF-HOSTED, not from a CDN. There used to be a render-blocking
+     <link> to fonts.googleapis.com here: until the foreign domain answered, the
+     browser did not draw the page at all. Measured with a CDP screencast (the
+     CDN answering in 600 ms): the first frame of the app appeared 660 ms after a
+     reload — and all that time the user saw a spinner. For a messenger in an
+     air-gapped network it is also a failure: without internet the fonts never
+     arrived at all.
+     The files live in /fonts, and the CSS is assembled by scripts/fetch-fonts.py.
+     @font-face does NOT block rendering (font-display: swap) — it was the
+     external CSS that blocked. -->
+<link rel="stylesheet" href="/css/fonts.css">
+<link rel="stylesheet" href="/css/app.css">
+
+<!-- ── PWA / Add to Home Screen (additive — does not change in-page behavior) ── -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0f1015">
+<meta name="application-name" content="Hexeris">
+<!-- Android / Chrome standalone -->
+<meta name="mobile-web-app-capable" content="yes">
+<!-- iOS standalone (Safari → Share → Add to Home Screen) -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Hexeris">
+<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/icons/apple-touch-icon.png">
+
+<!-- iOS launch/splash screens (Add-to-Home-Screen). Auto-generated; see assets/splash/. -->
+<link rel="apple-touch-startup-image" media="screen and (device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/assets/splash/apple-splash-640x1136.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" href="/assets/splash/apple-splash-1136x640.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/assets/splash/apple-splash-750x1334.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" href="/assets/splash/apple-splash-1334x750.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/assets/splash/apple-splash-1242x2208.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/assets/splash/apple-splash-2208x1242.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/assets/splash/apple-splash-1125x2436.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/assets/splash/apple-splash-2436x1125.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/assets/splash/apple-splash-828x1792.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" href="/assets/splash/apple-splash-1792x828.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/assets/splash/apple-splash-1242x2688.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/assets/splash/apple-splash-2688x1242.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/assets/splash/apple-splash-1170x2532.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/assets/splash/apple-splash-2532x1170.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/assets/splash/apple-splash-1284x2778.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/assets/splash/apple-splash-2778x1284.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/assets/splash/apple-splash-1179x2556.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/assets/splash/apple-splash-2556x1179.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/assets/splash/apple-splash-1290x2796.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/assets/splash/apple-splash-2796x1290.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/assets/splash/apple-splash-1206x2622.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/assets/splash/apple-splash-2622x1206.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/assets/splash/apple-splash-1320x2868.png">
+<link rel="apple-touch-startup-image" media="screen and (device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/assets/splash/apple-splash-2868x1320.png">
+
+</head>
+<body>
+<!-- Loading overlay: hides the auth/chat flicker at start-up.
+     Removed in auth.js after tryRestoreSession(). -->
+<div id="app-loading" style="
+  position:fixed;inset:0;z-index:9999;
+  background:#0f1015;
+  display:flex;align-items:center;justify-content:center;
+  transition:opacity .15s;
+">
+  <div id="app-loading-spinner" style="
+    width:32px;height:32px;
+    border:2px solid rgba(255,255,255,.08);
+    border-top-color:#2872ab;
+    border-radius:50%;
+    animation:spin .7s linear infinite;
+  "></div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
+<!-- Hexeris-styled confirm / prompt modal (replaces native dialogs). -->
+<div class="hex-modal-overlay" id="hex-modal-overlay">
+  <div class="hex-modal">
+    <div class="hex-modal-title" id="hex-modal-title"></div>
+    <div class="hex-modal-msg" id="hex-modal-msg"></div>
+    <input id="hex-modal-input" style="display:none" autocomplete="off"/>
+    <div class="hex-modal-actions">
+      <button class="hex-btn" id="hex-modal-cancel">Cancel</button>
+      <button class="hex-btn primary" id="hex-modal-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Viewing an image on top of the app (see js/lightbox.js). A click on the
+     backdrop closes it, a click on the image itself does not: overlayClose only
+     fires when e.target === the overlay. -->
+<div class="lightbox" id="lightbox" data-act="overlayClose" data-a1="closeLightbox" role="dialog" aria-modal="true" aria-label="Image viewer">
+  <div class="lightbox-bar">
+    <span class="lightbox-caption" id="lightbox-caption"></span>
+    <button class="lightbox-btn" id="lightbox-dl" data-act="downloadFile" data-a1="" data-stop
+            title="Download" aria-label="Download image">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    </button>
+    <button class="lightbox-btn" id="lightbox-close" data-act="closeLightbox" data-stop
+            title="Close" aria-label="Close image viewer">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <img class="lightbox-img" id="lightbox-img" alt=""/>
+  <div class="lightbox-spinner" aria-hidden="true"></div>
+</div>
+
+<!-- Forward picker: type a username OR pick an existing contact/group. -->
+<div class="hex-modal-overlay" id="forward-overlay" data-act="overlayClose" data-a1="closeForward">
+  <div class="hex-modal">
+    <div class="hex-modal-title">Forward to</div>
+    <div class="fwd-typebar">
+      <input id="forward-input" placeholder="Enter username…" autocomplete="off" data-act-enter="forwardTyped"/>
+      <button class="hex-btn primary" data-act="forwardTyped">Send</button>
+    </div>
+    <div class="fwd-list" id="forward-list"></div>
+    <div class="hex-modal-actions">
+      <button class="hex-btn" data-act="closeForward">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Profile editor: own display name, position, avatar, presence status. -->
+<div class="hex-modal-overlay" id="profile-modal-overlay" data-act="overlayClose" data-a1="closeMyProfile">
+  <div class="hex-modal profile-modal">
+    <div class="hex-modal-title">Your profile</div>
+    <div class="pf-avatar-row">
+      <div class="pf-avatar av-0" id="pf-avatar"></div>
+      <div class="pf-avatar-actions">
+        <button type="button" class="hex-btn" data-act="pickAvatarFile">Change photo</button>
+        <input type="file" id="pf-avatar-file" accept="image/*" style="display:none" data-act-change="uploadAvatar"/>
+      </div>
+    </div>
+    <label class="pf-label" for="pf-name">Display name</label>
+    <input class="hex-modal-input pf-input" id="pf-name" maxlength="64" autocomplete="off" placeholder="e.g. Harry Potter"/>
+    <label class="pf-label" for="pf-position">Position</label>
+    <input class="hex-modal-input pf-input" id="pf-position" maxlength="64" autocomplete="off" placeholder="e.g. Product Manager"/>
+    <label class="pf-label" for="pf-email">Email</label>
+    <input class="hex-modal-input pf-input" id="pf-email" type="email" maxlength="128" autocomplete="off" placeholder="e.g. harry@acme.com"/>
+    <label class="pf-label" for="pf-phone">Phone</label>
+    <input class="hex-modal-input pf-input" id="pf-phone" type="tel" maxlength="128" autocomplete="off" placeholder="e.g. +49 170 000 0000"/>
+    <label class="pf-label">Status</label>
+    <div class="pf-presence">
+      <button type="button" class="pf-pr" data-pr="available" data-act="pickPresence" data-a1="available"><span class="pf-pr-dot" style="background:var(--online)"></span>Available</button>
+      <button type="button" class="pf-pr" data-pr="busy" data-act="pickPresence" data-a1="busy"><span class="pf-pr-dot" style="background:#d9534f"></span>Busy</button>
+      <button type="button" class="pf-pr" data-pr="away" data-act="pickPresence" data-a1="away"><span class="pf-pr-dot" style="background:#e0a63c"></span>Away</button>
+    </div>
+    <div class="hex-modal-actions">
+      <button class="hex-btn" id="pf-cancel" data-act="closeMyProfile">Cancel</button>
+      <button class="hex-btn primary" id="pf-save" data-act="saveMyProfile">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Viewing a peer profile (read-only). -->
+<div class="hex-modal-overlay" id="peer-profile-overlay" data-act="overlayClose" data-a1="closePeerProfile">
+  <div class="hex-modal profile-modal">
+    <div class="pf-avatar-row">
+      <div class="pf-avatar av-0" id="ppf-avatar"></div>
+      <div class="pf-view-head">
+        <div class="pf-view-name" id="ppf-name"></div>
+        <div class="pf-view-pos" id="ppf-position"></div>
+      </div>
+    </div>
+    <div class="pf-view-row" id="ppf-email-row"><span class="pf-view-label">Email</span><a id="ppf-email" href="#"></a></div>
+    <div class="pf-view-row" id="ppf-phone-row"><span class="pf-view-label">Phone</span><a id="ppf-phone" href="#"></a></div>
+    <div class="hex-modal-actions">
+      <button class="hex-btn primary" data-act="closePeerProfile">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Network test: checks server, TURN config, and STUN/TURN ICE candidates. -->
+<div class="hex-modal-overlay" id="nettest-modal-overlay" data-act="overlayClose" data-a1="closeNetworkTest">
+  <div class="hex-modal nettest-modal">
+    <div class="hex-modal-title">Network test</div>
+    <div class="nt-list">
+      <div class="nt-row nt-wait" id="nt-server"><span class="nt-ico"></span><span class="nt-name">Server</span><span class="nt-detail">…</span></div>
+      <div class="nt-row nt-wait" id="nt-turn"><span class="nt-ico"></span><span class="nt-name">TURN config</span><span class="nt-detail">…</span></div>
+      <div class="nt-row nt-wait" id="nt-stun"><span class="nt-ico"></span><span class="nt-name">STUN (reflexive)</span><span class="nt-detail">…</span></div>
+      <div class="nt-row nt-wait" id="nt-relay"><span class="nt-ico"></span><span class="nt-name">TURN relay</span><span class="nt-detail">…</span></div>
+    </div>
+    <div class="nt-hint">A relay candidate confirms calls will connect behind strict NAT / firewalls.</div>
+    <div class="hex-modal-actions">
+      <button class="hex-btn" data-act="closeNetworkTest">Close</button>
+      <button class="hex-btn primary" id="nt-run" data-act="runNetworkTest">Run again</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── AUTH ───────────────────────────────────────── -->
+<div id="auth-screen" style="display:none">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">
+        <svg viewBox="0 0 100 100"><rect x="18" y="5" width="9" height="58" rx="4.5" fill="#fff"/><rect x="73" y="22" width="9" height="70" rx="4.5" fill="#fff"/><path d="M22.5 22 C22.5 10 33 4 50 4 C67 4 77.5 10 77.5 22 L73 22 C73 13 63.5 9 50 9 C36.5 9 27 13 27 22 Z" fill="#fff"/><circle cx="87" cy="85" r="9" fill="#ffffff"/></svg>
+      </div>
+      <span class="auth-logo-name js-app-name">Hexeris</span>
+    </div>
+
+    <div class="auth-subtitle">Sign in to your account</div>
+
+    <div class="auth-tabs">
+      <div class="auth-tab active" id="tab-login" data-act="switchTab" data-a1="login">Sign in</div>
+      <div class="auth-tab" id="tab-register" data-act="switchTab" data-a1="register">Sign up</div>
+    </div>
+
+    <div class="auth-field">
+      <label>Username</label>
+      <input type="text" id="auth-username" placeholder="Enter username" autocomplete="off"/>
+    </div>
+    <div class="auth-field">
+      <label>Password</label>
+      <div style="position:relative;display:flex;align-items:center">
+  <input type="password" id="auth-password" placeholder="Enter password" data-act-enter="doAuth" style="width:100%;padding-right:40px"/>
+  <button type="button" aria-label="Show or hide password" data-act="togglePasswordVis" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px">👁</button>
+</div>
+    </div>
+
+    <button class="auth-btn" id="auth-btn" data-act="doAuth">Sign in</button>
+
+    <!-- ONE "or" divider for all the alternative sign-in methods.
+         It used to sit inside each block, and with SSO and Google both enabled
+         two identical strips appeared on screen one after another.
+         Shown when at least one method is enabled (see applyAppConfig). -->
+    <div id="alt-auth-sep" class="auth-sep" style="display:none">
+      <span></span><em>or</em><span></span>
+    </div>
+
+    <!-- Sign-in through a corporate provider. The block is hidden until the
+         server confirms SSO is configured: a button leading to a certain error is
+         worse than no button. -->
+    <div id="sso-block" style="display:none">
+      <button class="auth-btn" id="sso-btn" data-act="startSSO" type="button">Sign in with SSO</button>
+    </div>
+
+    <div id="google-auth-block" style="display:none">
+    <div id="g_id_onload"
+      data-client_id=""
+      data-callback="handleGoogleAuth"
+      data-auto_prompt="false">
+    </div>
+    <div style="display:flex;justify-content:center">
+      <div class="g_id_signin"
+        data-type="standard"
+        data-shape="rectangular"
+        data-theme="filled_black"
+        data-text="continue_with"
+        data-size="large"
+        data-width="288"
+        data-logo_alignment="left">
+      </div>
+    </div>
+    </div>
+
+    <div class="auth-error" id="auth-error"></div>
+  </div>
+</div>
+
+<!-- Mandatory password change.
+     An account created by an administrator arrives with a temporary password
+     known to more than its owner. Until the first change we do not let them into
+     conversations. -->
+<div id="pwchange-screen" style="display:none">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">
+        <svg viewBox="0 0 100 100"><rect x="18" y="5" width="9" height="58" rx="4.5" fill="#fff"/><rect x="73" y="22" width="9" height="70" rx="4.5" fill="#fff"/><path d="M22.5 22 C22.5 10 33 4 50 4 C67 4 77.5 10 77.5 22 L73 22 C73 13 63.5 9 50 9 C36.5 9 27 13 27 22 Z" fill="#fff"/><circle cx="87" cy="85" r="9" fill="#ffffff"/></svg>
+      </div>
+      <span class="auth-logo-name js-app-name">Hexeris</span>
+    </div>
+
+    <div class="auth-subtitle">Choose your own password</div>
+    <div style="color:var(--muted);font-size:13px;line-height:1.5;margin-bottom:16px">
+      Your account was created by an administrator, so the current password is
+      known to someone else. Set a new one to finish setting up your account.
+    </div>
+
+    <div class="auth-field">
+      <label>Current password</label>
+      <input type="password" id="pw-old" placeholder="The password you were given" autocomplete="current-password"/>
+    </div>
+    <div class="auth-field">
+      <label>New password</label>
+      <input type="password" id="pw-new" placeholder="At least 8 characters" autocomplete="new-password"/>
+    </div>
+    <div class="auth-field">
+      <label>Repeat new password</label>
+      <input type="password" id="pw-new2" placeholder="Repeat it" autocomplete="new-password" data-act-enter="submitPasswordChange"/>
+    </div>
+
+    <button class="auth-btn" id="pw-btn" data-act="submitPasswordChange">Set password</button>
+    <div class="auth-error" id="pw-error"></div>
+  </div>
+</div>
+
+<!-- ── Second sign-in step: the one-time code ───────────────
+     A separate screen rather than a field on the sign-in screen: the password
+     has been accepted by this point, and leaving its fields in view means
+     inviting someone who is simply looking for their phone to type the password
+     again.
+
+     inputmode="numeric" and autocomplete="one-time-code" are not cosmetic: on a
+     phone the numeric keyboard opens, and iOS itself offers the code from the
+     authenticator app's notification. -->
+<div id="twofa-screen" style="display:none">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">
+        <svg viewBox="0 0 100 100"><rect x="18" y="5" width="9" height="58" rx="4.5" fill="#fff"/><rect x="73" y="22" width="9" height="70" rx="4.5" fill="#fff"/><path d="M22.5 22 C22.5 10 33 4 50 4 C67 4 77.5 10 77.5 22 L73 22 C73 13 63.5 9 50 9 C36.5 9 27 13 27 22 Z" fill="#fff"/><circle cx="87" cy="85" r="9" fill="#ffffff"/></svg>
+      </div>
+      <span class="auth-logo-name js-app-name">Hexeris</span>
+    </div>
+
+    <div class="auth-subtitle">Two-step verification</div>
+    <div style="color:var(--muted);font-size:13px;line-height:1.5;margin-bottom:16px">
+      Open your authenticator app and enter the 6-digit code for
+      <b id="twofa-account">your account</b>.
+    </div>
+
+    <div class="auth-field">
+      <label>Code</label>
+      <input type="text" id="twofa-code" placeholder="123456" maxlength="19"
+             inputmode="numeric" autocomplete="one-time-code"
+             data-act-enter="submitTwoFA" style="letter-spacing:2px"/>
+    </div>
+
+    <button class="auth-btn" id="twofa-btn" data-act="submitTwoFA">Verify</button>
+    <div class="auth-error" id="twofa-error"></div>
+    <div style="color:var(--muted);font-size:12px;line-height:1.5;margin-top:14px">
+      Lost your phone? Enter one of your recovery codes instead. If none are
+      left, ask an administrator to reset two-step verification.
+    </div>
+    <button class="auth-link" id="twofa-back" data-act="cancelTwoFA"
+            style="margin-top:10px">Back to sign-in</button>
+  </div>
+</div>
+
+<!-- ── CHAT ───────────────────────────────────────── -->
+<!-- display:none until sign-in — otherwise the raw chat HTML flashes during
+     loading and shifts the layout; startChat() shows it on sign-in. -->
+<div id="chat-screen" style="display:none">
+  <div class="sidebar">
+    <div class="sidebar-me">
+      <div class="sidebar-logo" aria-hidden="true">
+        <svg viewBox="0 0 100 100" style="fill:none"><rect x="18" y="5" width="9" height="58" rx="4.5" fill="#fff"/><rect x="73" y="22" width="9" height="70" rx="4.5" fill="#fff"/><path d="M22.5 22 C22.5 10 33 4 50 4 C67 4 77.5 10 77.5 22 L73 22 C73 13 63.5 9 50 9 C36.5 9 27 13 27 22 Z" fill="#fff"/><circle cx="87" cy="85" r="9" fill="#ffffff"/></svg>
+      </div>
+      <div class="me-avatar av-0" id="me-avatar" role="button" tabindex="0" aria-label="Edit your profile" title="Edit your profile" data-act="openMyProfile" data-act-enter="openMyProfile" data-space></div>
+      <div class="me-meta" data-act="openMyProfile">
+        <span id="me-label">you</span>
+        <span id="me-position" class="me-position"></span>
+      </div>
+      <div class="me-dot" id="me-dot"></div>
+      <div class="sidebar-settings">
+        <button class="me-settings-btn" id="settings-btn" data-act="toggleSettingsMenu" data-stop aria-label="Settings" aria-haspopup="true" aria-expanded="false" title="Settings">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+        </button>
+        <div class="dropdown-menu" id="settings-menu" role="menu" aria-label="Settings menu">
+          <button class="dropdown-item" role="menuitem" data-act="openNetworkTest">
+            <svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            <span class="dd-label">Network test</span>
+          </button>
+          <button class="dropdown-item" id="settings-notify" role="menuitem" data-act="toggleNotifications">
+            <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="dd-label">Notifications</span>
+          </button>
+          <button class="dropdown-item" id="settings-theme" role="menuitem" data-act="cycleTheme">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            <span class="dd-label">Theme: Dark</span>
+          </button>
+          <!-- The second factor. The item's label changes to match the actual
+               state (On / Off) rather than staying static: otherwise the only way
+               to find out whether it is on is to open the window and look. -->
+          <button class="dropdown-item" id="settings-2fa" role="menuitem" data-act="open2FASetup">
+            <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span class="dd-label">Two-step verification</span>
+          </button>
+          <!-- Cleaning up rows that lead nowhere: the peer was deleted while
+               this device was offline, and there is nowhere else to learn it. -->
+          <button class="dropdown-item" id="settings-cleanup" role="menuitem" data-act="cleanupDeletedChats">
+            <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+            <span class="dd-label">Clean up deleted accounts</span>
+          </button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item danger" role="menuitem" data-act="logout">
+            <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            <span class="dd-label">Sign out</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="new-chat-wrap">
+      <input class="new-chat-input" id="new-chat-user" placeholder="Start chat with..." data-act-enter="openChat"/>
+      <button class="new-chat-btn" data-act="openChat" title="Open chat" aria-label="Open chat">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button class="new-chat-btn" data-act="openGroupModal" title="New group" aria-label="New group">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="search-wrap">
+      <input class="new-chat-input" id="search-input" placeholder="Search messages..." data-act-input="onSearchInput"/>
+      <span class="search-kbd" id="search-kbd">⌘K</span>
+    </div>
+
+    <div class="contacts-list" id="search-results" style="display:none"></div>
+    <div class="contacts-list" id="contacts-list">
+      <!-- Skeleton placeholders — replaced on first renderContacts(). -->
+      <div class="skel-item"><div class="skel-ava"></div><div class="skel-lines"><div class="skel-line"></div><div class="skel-line short"></div></div></div>
+      <div class="skel-item"><div class="skel-ava"></div><div class="skel-lines"><div class="skel-line"></div><div class="skel-line short"></div></div></div>
+      <div class="skel-item"><div class="skel-ava"></div><div class="skel-lines"><div class="skel-line"></div><div class="skel-line short"></div></div></div>
+    </div>
+
+  </div>
+
+  <div class="chat-area hidden" id="chat-area">
+    <div class="chat-empty" id="chat-empty">
+      <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <div class="chat-empty-title">No chat selected</div>
+      <div class="chat-empty-sub">Enter a username above to start chatting</div>
+    </div>
+
+    <div id="chat-main" style="display:none;flex:1;flex-direction:column;min-height:0;position:relative;">
+      <!-- Drop overlay — shown when user drags files over the chat area -->
+      <div id="drop-overlay" class="drop-overlay">
+        <svg viewBox="0 0 24 24"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>
+        <span>Drop files to send</span>
+      </div>
+      <!-- #chat-top: floats above the feed; messages scroll under it (frosted). -->
+      <div id="chat-top">
+      <div class="chat-header">
+        <button class="back-btn" data-act="showSidebar" title="Back" aria-label="Back">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <!-- title was removed deliberately: on a long press on a phone and on
+             hover on a desktop it popped up as a label over the avatar. For
+             accessibility aria-label remains — a screen reader reads it, the
+             browser does not draw it. -->
+        <div class="chat-header-avatar" id="chat-header-avatar" data-act="viewPeerProfile" style="cursor:pointer" role="button" tabindex="0" data-act-enter="viewPeerProfile" data-space aria-label="View profile"></div>
+        <div class="chat-header-info" data-act="viewPeerProfile" style="cursor:pointer" aria-label="View profile">
+          <div class="chat-header-name" id="chat-header-name"></div>
+          <div class="chat-header-status" id="chat-header-status">online</div>
+        </div>
+        <button id="group-info-btn" data-act="openGroupPanel" title="Group members" aria-label="Group members" style="display:none;background:none;border:none;cursor:pointer;padding:4px 8px;align-items:center;color:var(--muted);transition:color .15s;">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        </button>
+        <button id="attach-panel-btn" class="chat-hdr-btn" data-act="toggleAttachPanel" title="Attachments in this chat" aria-label="Attachments in this chat" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        </button>
+        <button id="chat-search-btn" class="chat-hdr-btn" data-act="toggleChatSearch" title="Search in this chat" aria-label="Search in this chat">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+        <span id="call-buttons" style="display:none">
+        <button class="call-start-btn" data-act="startCall" data-a1="voice" title="Voice call" aria-label="Voice call" style="background:none;border:none;cursor:pointer;padding:4px 8px;display:flex;align-items:center;color:var(--muted);transition:color .15s;">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.4 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.84a16 16 0 0 0 6 6l.94-.94a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        </button>
+        <button class="call-start-btn" data-act="startCall" data-a1="video" title="Video call" aria-label="Video call" style="background:none;border:none;cursor:pointer;padding:4px 8px;display:flex;align-items:center;color:var(--muted);transition:color .15s;">
+          <svg viewBox="0 0 24 24" width="21" height="21" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        </button>
+        </span>
+        <div class="e2e-badge" data-act="showE2EPopup">
+          <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          server-side encrypted
+        </div>
+      </div>
+
+      <!-- In-chat search bar: searches the currently open conversation. -->
+      <div class="chat-search-bar" id="chat-search-bar">
+        <svg class="csb-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="chat-search-input" placeholder="Search in this chat…" autocomplete="off"
+               data-act-input="onChatSearchInput" data-act-enter="chatSearchEnter"/>
+        <span class="csb-count" id="chat-search-count"></span>
+        <button class="csb-nav" data-act="chatSearchStep" data-a1="-1" title="Previous" aria-label="Previous">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg>
+        </button>
+        <button class="csb-nav" data-act="chatSearchStep" data-a1="1" title="Next" aria-label="Next">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <button class="csb-nav" data-act="closeChatSearch" title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      </div><!-- /#chat-top -->
+
+      <!-- Call Overlay -->
+      <div class="call-overlay" id="call-overlay" data-act="callSurfaceTap">
+        <video id="remote-video" autoplay playsinline></video>
+        <!-- Our own video in the corner. The wrapper is needed to place the
+             camera-switch button on top: nothing can be nested inside <video>. -->
+        <div class="local-video-wrap" id="local-video-wrap">
+          <video id="local-video" autoplay playsinline muted></video>
+          <button class="flip-cam-btn" id="flip-cam-btn" data-act="flipCamera" data-stop
+                  title="Switch camera" aria-label="Switch camera">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <path d="M15 13a3 3 0 1 1-4.5-2.6"/>
+              <polyline points="15 9 15 13 11 13"/>
+            </svg>
+          </button>
+        </div>
+        <div class="call-box">
+          <div class="call-avatar-wrap" id="call-avatar-wrap">
+            <div class="call-avatar" id="call-avatar"></div>
+            <div class="call-pulse ring1"></div>
+            <div class="call-pulse ring2"></div>
+            <div class="call-pulse ring3"></div>
+          </div>
+          <div class="call-name" id="call-name"></div>
+          <div class="call-quality" id="call-quality" style="display:none"><span id="quality-bars">▂▄▆</span> <span id="quality-label" style="font-size:11px;color:var(--muted)"></span></div>
+          <div class="volume-indicator" id="volume-indicator" style="display:none"><div class="vol-bar" id="vol-bar"></div></div>
+          <div class="call-status" id="call-status">Calling...</div>
+          <div class="call-timer" id="call-timer">0:00</div>
+
+          <!-- Volume slider (shown during active call) -->
+          <div class="call-volume" id="call-volume">
+            <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+            <input type="range" id="volume-slider" min="0" max="100" value="100" data-act-input="setVolume"/>
+          </div>
+
+          <!-- Outgoing call -->
+          <div class="call-btns" id="call-btns-calling">
+            <div class="call-btn-wrap">
+              <button class="call-btn end" data-act="endCall" aria-label="End call">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+  <path d="M20.01 15.38c-1.23-.47-2.54-.74-3.89-.74-.53 0-1.04.08-1.52.23-.5.16-.99.44-1.32.81l-1.34 1.5c-2.19-1.17-4.01-2.99-5.18-5.18l1.5-1.34c.37-.33.65-.82.81-1.32.15-.48.23-.99.23-1.52 0-1.35-.27-2.66-.74-3.89C8.16 3.25 7.38 3 6.55 3H4.5C3.67 3 3 3.67 3 4.5 3 14.15 9.85 21 19.5 21c.83 0 1.5-.67 1.5-1.5v-2.05c0-.83-.25-1.61-.99-2.07z"/>
+  <line x1="4" y1="4" x2="20" y2="20" stroke-width="2"/>
+</svg>
+              </button>
+              <span class="call-btn-label">End</span>
+            </div>
+          </div>
+
+          <!-- Incoming call -->
+          <div class="call-btns" id="call-btns-incoming" style="display:none">
+            <div class="call-btn-wrap">
+              <button class="call-btn end" data-act="rejectCall" aria-label="Decline call">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+  <path d="M20.01 15.38c-1.23-.47-2.54-.74-3.89-.74-.53 0-1.04.08-1.52.23-.5.16-.99.44-1.32.81l-1.34 1.5c-2.19-1.17-4.01-2.99-5.18-5.18l1.5-1.34c.37-.33.65-.82.81-1.32.15-.48.23-.99.23-1.52 0-1.35-.27-2.66-.74-3.89C8.16 3.25 7.38 3 6.55 3H4.5C3.67 3 3 3.67 3 4.5 3 14.15 9.85 21 19.5 21c.83 0 1.5-.67 1.5-1.5v-2.05c0-.83-.25-1.61-.99-2.07z"/>
+  <line x1="4" y1="4" x2="20" y2="20" stroke-width="2"/>
+</svg>
+              </button>
+              <span class="call-btn-label">Decline</span>
+            </div>
+            <div class="call-btn-wrap">
+              <button class="call-btn accept" data-act="acceptCall" aria-label="Accept call">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+  <path d="M20.01 15.38c-1.23-.47-2.54-.74-3.89-.74-.53 0-1.04.08-1.52.23-.5.16-.99.44-1.32.81l-1.34 1.5c-2.19-1.17-4.01-2.99-5.18-5.18l1.5-1.34c.37-.33.65-.82.81-1.32.15-.48.23-.99.23-1.52 0-1.35-.27-2.66-.74-3.89C8.16 3.25 7.38 3 6.55 3H4.5C3.67 3 3 3.67 3 4.5 3 14.15 9.85 21 19.5 21c.83 0 1.5-.67 1.5-1.5v-2.05c0-.83-.25-1.61-.99-2.07z"/>
+</svg>
+              </button>
+              <span class="call-btn-label">Accept</span>
+            </div>
+          </div>
+
+          <!-- Minimize button -->
+          <button id="minimize-call-btn" data-act="minimizeCall" style="display:none;background:none;border:none;cursor:pointer;color:#6b6d82;font-size:12px;margin-top:8px;padding:4px 12px;border-radius:6px;transition:background .15s">
+            ↓ minimize
+          </button>
+
+          <!-- Active call -->
+          <div class="call-btns" id="call-btns-active" style="display:none">
+            <div class="call-btn-wrap">
+              <button class="call-btn mute" id="mute-btn" data-act="toggleMute" aria-label="Toggle mute">
+                <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+              </button>
+              <span class="call-btn-label" id="mute-label">Mute</span>
+            </div>
+            <div class="call-btn-wrap" id="speaker-btn-wrap">
+              <button class="call-btn mute" id="speaker-btn" data-act="toggleSpeaker" aria-label="Toggle speaker">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+              </button>
+              <span class="call-btn-label" id="speaker-label">Speaker</span>
+            </div>
+            <div class="call-btn-wrap" id="camera-btn-wrap" style="display:none">
+              <button class="call-btn mute" id="camera-btn" data-act="toggleCamera" aria-label="Toggle camera">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+              </button>
+              <span class="call-btn-label" id="camera-label">Camera</span>
+            </div>
+            <div class="call-btn-wrap" id="screen-btn-wrap" style="display:none">
+              <button class="call-btn mute" id="screen-btn" data-act="toggleScreenShare" aria-label="Toggle screen sharing">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              </button>
+              <span class="call-btn-label" id="screen-label">Share</span>
+            </div>
+            <div class="call-btn-wrap">
+              <button class="call-btn end" data-act="endCall" aria-label="End call">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+  <path d="M20.01 15.38c-1.23-.47-2.54-.74-3.89-.74-.53 0-1.04.08-1.52.23-.5.16-.99.44-1.32.81l-1.34 1.5c-2.19-1.17-4.01-2.99-5.18-5.18l1.5-1.34c.37-.33.65-.82.81-1.32.15-.48.23-.99.23-1.52 0-1.35-.27-2.66-.74-3.89C8.16 3.25 7.38 3 6.55 3H4.5C3.67 3 3 3.67 3 4.5 3 14.15 9.85 21 19.5 21c.83 0 1.5-.67 1.5-1.5v-2.05c0-.83-.25-1.61-.99-2.07z"/>
+  <line x1="4" y1="4" x2="20" y2="20" stroke-width="2"/>
+</svg>
+              </button>
+              <span class="call-btn-label">End</span>
+            </div>
+          </div>
+        </div>
+        <audio id="remote-audio" autoplay playsinline></audio>
+        <audio id="ringtone-audio" loop></audio>
+      </div>
+
+      <!-- Call Bar — minimized indicator -->
+      <div class="call-bar" id="call-bar" data-act="expandCall">
+        <div class="call-bar-left">
+          <div class="call-bar-dot"></div>
+          <span class="call-bar-name" id="call-bar-name"></span>
+          <span class="call-bar-timer" id="call-bar-timer">0:00</span>
+        </div>
+        <button class="call-bar-end" data-act="endCall" data-stop>End</button>
+      </div>
+
+      <!-- Context Menu -->
+      <div class="ctx-menu" id="ctx-menu">
+        <div class="ctx-item" data-act="ctxReact" data-stop><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>React</div>
+        <div class="ctx-item" data-act="ctxReply" data-stop><svg viewBox="0 0 24 24"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>Reply</div>
+        <div class="ctx-item" data-act="ctxForward" data-stop><svg viewBox="0 0 24 24"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>Forward</div>
+        <div class="ctx-item" data-act="ctxCopy" data-stop><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</div>
+        <div class="ctx-item" id="ctx-download-item" data-act="ctxDownload" data-stop><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download</div>
+        <div class="ctx-item" id="ctx-edit-item" data-act="ctxEdit" data-stop><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Edit</div>
+        <div class="ctx-item danger" id="ctx-delete-item" data-act="ctxDelete" data-stop><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>Delete</div>
+      </div>
+      <div class="emoji-picker" id="emoji-picker">
+        <button class="emoji-btn" data-act="addReaction" data-a1="👍" data-stop>👍</button>
+        <button class="emoji-btn" data-act="addReaction" data-a1="❤️" data-stop>❤️</button>
+        <button class="emoji-btn" data-act="addReaction" data-a1="😂" data-stop>😂</button>
+        <button class="emoji-btn" data-act="addReaction" data-a1="😮" data-stop>😮</button>
+        <button class="emoji-btn" data-act="addReaction" data-a1="😢" data-stop>😢</button>
+        <button class="emoji-btn" data-act="addReaction" data-a1="🔥" data-stop>🔥</button>
+        <button class="emoji-btn" data-act="addReaction" data-a1="👏" data-stop>👏</button>
+        <button class="emoji-btn" data-act="addReaction" data-a1="🎉" data-stop>🎉</button>
+      </div>
+      <div class="reply-bar" id="reply-bar">
+        <div class="reply-bar-text" id="reply-bar-text"></div>
+        <button class="reply-bar-close" data-act="cancelReply" aria-label="Cancel reply">×</button>
+      </div>
+      <!-- E2E Info Popup -->
+      <div class="e2e-popup-overlay" id="e2e-popup" data-act="overlayClose" data-a1="hideE2EPopup">
+        <div class="e2e-popup">
+          <div class="e2e-popup-header">
+            <div class="e2e-popup-icon">
+              <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <div>
+              <div class="e2e-popup-title">Server-side encrypted</div>
+              <div class="e2e-popup-subtitle">Encrypted in transit &amp; at rest</div>
+            </div>
+          </div>
+
+          <div class="e2e-layer">
+            <div class="e2e-layer-title">
+              Encryption at Rest
+              <span class="lbadge green">AES-256-GCM</span>
+            </div>
+            <div class="e2e-layer-desc">Messages are encrypted at rest on the server using AES-256-GCM. Stored data is unreadable to anyone with disk or backup access without the server key.</div>
+          </div>
+
+          <div class="e2e-layer">
+            <div class="e2e-layer-title">
+              AES-256-GCM
+              <span class="lbadge blue">Symmetric</span>
+            </div>
+            <div class="e2e-layer-desc">The server encrypts message contents before writing them to the database, so stored messages are never kept as plain text.</div>
+          </div>
+
+          <div class="e2e-layer">
+            <div class="e2e-layer-title">
+              TLS 1.3 Transport
+              <span class="lbadge teal">Let's Encrypt</span>
+            </div>
+            <div class="e2e-layer-desc">All traffic is encrypted in transit via WSS/HTTPS with a verified Let's Encrypt certificate, protecting messages as they travel between you and the server.</div>
+          </div>
+
+          <button class="e2e-popup-close" data-act="hideE2EPopup">Got it</button>
+        </div>
+      </div>
+
+      <div class="messages-wrap" id="messages-wrap">
+        <div class="msg-day">Today</div>
+      </div>
+
+      <!-- The conversation attachments panel. It lives next to the feed and
+           replaces it rather than popping up as a window: people look for a file
+           in the chat it was sent to, and there is no reason to lose that
+           context. -->
+      <div class="attach-panel" id="attach-panel" hidden>
+        <div class="ap-tabs" role="tablist" aria-label="Attachment type">
+          <button class="ap-tab active" role="tab" aria-selected="true"  data-act="attachPanelTab" data-a1="media">Media</button>
+          <button class="ap-tab"        role="tab" aria-selected="false" data-act="attachPanelTab" data-a1="files">Files</button>
+          <button class="ap-tab"        role="tab" aria-selected="false" data-act="attachPanelTab" data-a1="voice">Voice</button>
+          <input class="ap-filter" id="ap-filter" type="search" placeholder="Filter by name" aria-label="Filter loaded attachments by name"/>
+        </div>
+        <div class="ap-body" id="ap-body" role="tabpanel" aria-live="polite"></div>
+      </div>
+
+      <!-- #chat-bottom: floats above the feed; messages scroll under it. -->
+      <div id="chat-bottom">
+      <div class="typing-indicator" id="typing-indicator">
+        <span id="typing-name"></span>
+        <div class="typing-dots"><span></span><span></span><span></span></div>
+      </div>
+      <div class="reply-bar" id="reply-bar-input" style="display:none;padding:6px 16px;background:var(--bg2);border-top:1px solid var(--border);align-items:center;gap:10px;font-size:12px;color:var(--muted)"><div id="reply-bar-input-text" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div><button data-act="cancelReply" aria-label="Cancel reply" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:20px">×</button></div>
+      <div class="reply-bar" id="edit-bar-input" style="display:none;padding:6px 16px;background:var(--bg2);border-top:1px solid var(--border);align-items:center;gap:10px;font-size:12px;color:var(--muted)"><div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><strong style="color:var(--accent)">✎ Editing</strong></div><button data-act="cancelEdit" aria-label="Cancel editing" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:20px">×</button></div>
+      <div class="upload-progress" id="upload-progress">
+        <div class="upload-progress-label" id="upload-progress-label">Uploading...</div>
+        <div class="upload-progress-bar">
+          <div class="upload-progress-fill" id="upload-progress-fill"></div>
+        </div>
+      </div>
+      <button class="scroll-down-btn" id="scroll-down-btn" data-act="scrollFeedToBottom"
+              aria-label="Scroll to latest messages" title="Latest messages">
+        <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+        <span class="scroll-down-count" id="scroll-down-count" style="display:none">0</span>
+      </button>
+      <div class="input-area">
+        <div class="attach-wrap">
+          <button class="attach-btn" id="attach-btn" data-act="toggleAttachMenu" title="Attach" aria-label="Attach">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <div class="attach-menu" id="attach-menu">
+            <button class="attach-item" data-act="pickAttach" data-a1="photo"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>Photo</button>
+            <button class="attach-item" data-act="pickAttach" data-a1="video"><svg viewBox="0 0 24 24"><path d="m23 7-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>Video</button>
+            <button class="attach-item" data-act="pickAttach" data-a1="document"><svg viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7"/></svg>File</button>
+            <button class="attach-item" data-act="pickAttach" data-a1="audio"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Audio</button>
+          </div>
+        </div>
+        <!-- accept is not set: any file type is allowed; pickAttach() narrows
+             the choice for photo/video/audio and opens everything for "File". -->
+        <input type="file" id="file-input" style="display:none"
+               multiple data-act-change="filesPicked"/>
+        <div class="msg-input-wrap">
+          <!-- data-enter-fine: Enter sends only where the keyboard is physical.
+               On a phone Enter on the on-screen keyboard is a line break:
+               otherwise there is simply no way to type a paragraph. -->
+          <textarea class="msg-textarea" id="msg-textarea" placeholder="Message..." rows="1"
+            data-act-enter="sendMessage" data-enter-nosh data-enter-fine
+            data-act-input="composerInput"></textarea>
+        </div>
+        <!-- data-act-down="noop" data-prevent — as on mic/send: we suppress
+             mousedown so focus does not leave the field. Otherwise on a phone a
+             tap on </> moves focus away and the on-screen keyboard closes. -->
+        <button class="fmt-btn" id="fmt-code-btn" data-act="toggleCodeMode" data-stop
+                data-act-down="noop" data-prevent
+                aria-pressed="false" title="Send as code block" aria-label="Send as code block">
+          <svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        </button>
+        <button class="mic-btn" id="mic-btn" data-act-down="noop" data-prevent data-act="startVoiceRecording" title="Record voice message" aria-label="Record voice message">
+          <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+        </button>
+        <button class="send-btn" data-act-down="noop" data-prevent aria-label="Send message" data-act="sendMessage">
+          <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+      <!-- Voice recording bar — replaces the composer while recording. -->
+      <div class="voice-rec-bar" id="voice-rec-bar">
+        <button class="voice-rec-cancel" data-act="cancelVoiceRecording" title="Cancel" aria-label="Cancel">
+          <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+        <span class="voice-rec-dot"></span>
+        <span class="voice-rec-time" id="voice-rec-time">0:00</span>
+        <div class="voice-rec-wave" id="voice-rec-wave"></div>
+        <button class="voice-rec-send" data-act="stopAndSendVoice" title="Send" aria-label="Send">
+          <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+      </div><!-- /#chat-bottom -->
+    </div>
+  </div>
+</div>
+
+<!-- File preview modal — shown before sending pasted/dropped files -->
+<div id="file-preview-modal" class="fp-modal">
+  <div class="fp-box">
+    <img  id="fp-thumb" src="" alt="" style="display:none"/>
+    <div  id="fp-icon" class="fp-icon" style="display:none"></div>
+    <div  id="fp-name" class="fp-fname"></div>
+    <div  id="fp-size" class="fp-fsize"></div>
+    <div class="fp-hint">Press <kbd>Enter</kbd> to send · <kbd>Esc</kbd> to cancel</div>
+    <div class="fp-actions">
+      <button class="fp-btn fp-cancel" data-act="cancelFilePreview">Cancel</button>
+      <button class="fp-btn fp-send"   id="fp-confirm" data-act="confirmFilePreview">Send</button>
+    </div>
+  </div>
+</div>
+
+<div class="group-overlay" id="group-modal" style="display:none">
+  <div class="group-box">
+    <div class="gp-header"><div class="gp-title">New group</div>
+      <button class="gp-close" data-act="closeGroupModal" aria-label="Close">✕</button></div>
+    <input class="new-chat-input" id="group-name-input" placeholder="Group name" maxlength="64"
+           data-act-enter="createGroupSubmit"/>
+    <input class="new-chat-input" id="group-members-input" placeholder="Members, comma-separated (optional)"
+           data-act-enter="createGroupSubmit"/>
+    <div class="auth-error" id="group-modal-error"></div>
+    <button class="auth-btn" data-act="createGroupSubmit">Create</button>
+  </div>
+</div>
+
+<div class="group-overlay dlg-anchored" id="group-panel" style="display:none">
+  <div class="group-box" id="group-panel-box"></div>
+</div>
+
+<!-- The second factor: turning it on and off, recovery codes.
+     The contents are built in twofa.js — there are four states (off, setup,
+     codes shown, turning off), and keeping four hidden blocks in the markup
+     would mean four sets of ids, three of which are always dead. -->
+<div class="group-overlay dlg-anchored" id="twofa-modal" style="display:none">
+  <div class="group-box" id="twofa-modal-box"></div>
+</div>
+
+<!-- Chat list context menu: right-click on a computer, long press on a phone.
+     The Pin/Mute/Archive labels are switched in showChatMenu to match the state
+     of the particular conversation. -->
+<div class="ctx-menu" id="chat-ctx-menu">
+  <div class="ctx-item" id="cctx-pin" data-act="cctxPin" data-stop><svg viewBox="0 0 24 24"><line x1="12" y1="17" x2="12" y2="22"/><path d="M9 4h6l-1 6 3 3H7l3-3-1-6z"/></svg><span>Pin to top</span></div>
+  <div class="ctx-item" id="cctx-mute" data-act="cctxMute" data-stop><svg viewBox="0 0 24 24"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.9 17.9 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg><span>Mute</span></div>
+  <div class="ctx-item" id="cctx-archive" data-act="cctxArchive" data-stop><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9"/><line x1="10" y1="13" x2="14" y2="13"/></svg><span>Archive</span></div>
+  <div class="ctx-item" id="cctx-read" data-act="cctxRead" data-stop><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span>Mark as read</span></div>
+  <div class="ctx-item danger" id="cctx-delete" data-act="cctxDelete" data-stop><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg><span>Delete chat</span></div>
+</div>
+
+<script src="/js/state.js"></script>
+<script src="/js/session.js"></script>
+<script src="/js/sso.js"></script>
+<script src="/js/storage.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/transport.js"></script>
+<script src="/js/history.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/helpers.js"></script>
+<script src="/js/a11y.js"></script>
+<script src="/js/ui.js"></script>
+<script src="/js/profiles.js"></script>
+<script src="/js/chatsearch.js"></script>
+<script src="/js/upload.js"></script>
+<script src="/js/voice.js"></script>
+<script src="/js/linkpreview.js"></script>
+<script src="/js/gestures.js"></script>
+<script src="/js/groups.js"></script>
+<script src="/js/calls.js"></script>
+<script src="/js/nettest.js"></script>
+<script src="/js/menu.js"></script>
+<script src="/js/chatmenu.js"></script>
+<script src="/js/richtext.js"></script>
+<script src="/js/lightbox.js"></script>
+<script src="/js/attachpanel.js"></script>
+<script src="/js/backstack.js"></script>
+<script src="/js/push.js"></script>
+<script src="/js/appconfig.js"></script>
+<script src="/js/settings.js"></script>
+<script src="/js/twofa.js"></script>
+<!-- Event delegation: the action registry refers to functions from the files
+     above, so it is loaded after them (the handlers are attached to document,
+     so the order only matters for resolving names). -->
+<script src="/js/events.js"></script>
+<script src="/js/main.js"></script>
+<!-- Start-up scripts: these used to be inline <script> right here. -->
+<script src="/js/bootstrap.js"></script>
+</body>
+</html>
