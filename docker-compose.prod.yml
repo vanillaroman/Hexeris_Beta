@@ -1,0 +1,155 @@
+# Hexeris — production stack (HTTPS, certificate renewal, your own domain).
+# Start it after issuing the first certificate (see docs/operations/DEPLOY.md):
+#   docker compose -f docker-compose.prod.yml up -d --build
+# Requires a .env with APP_DOMAIN and real secrets (cp .env.example .env).
+name: hexeris
+
+# Log rotation. The json-file driver writes without a size limit by default,
+# so a log grows until the disk is full — a genuine way to take a small server
+# down. The shared anchor keeps any service from being forgotten.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hexeris}
+      POSTGRES_USER: ${POSTGRES_USER:-hexeris}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hexeris} -d ${POSTGRES_DB:-hexeris}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # Stock Postgres settings aim to start anywhere rather than to run this
+    # workload. The values below suit a messenger on a modest server: many
+    # small inserts, with the database as the bottleneck. None of them cost
+    # durability — no acknowledged message is lost, even on power failure.
+    command:
+      - postgres
+      # Page cache. The default is 128 MB; ~25% of RAM is a usual start.
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-256MB}
+      # Tells the planner how much data is really cached, including the OS
+      # cache. The 4 GB default is a lie on a small machine.
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-768MB}
+      # Rarer checkpoints, spread over time: otherwise a checkpoint lands
+      # in a traffic peak and adds full-page writes all at once, which was
+      # the main source of variance in our measurements.
+      - -c
+      - max_wal_size=${PG_MAX_WAL_SIZE:-2GB}
+      - -c
+      - checkpoint_completion_target=0.9
+      # Compressing full-page writes shrinks the WAL and the I/O it costs.
+      # It spends a little CPU, but the bottleneck was disk and transactions.
+      - -c
+      - wal_compression=on
+      - -c
+      - wal_buffers=16MB
+      # On SSD a random read costs little more than a sequential one. The
+      # default of 4 assumes spinning disks and steers the planner away from
+      # indexes.
+      - -c
+      - random_page_cost=1.1
+      # Group commit: when transactions arrive in bursts, wait 200 µs and
+      # flush the WAL once for several commits. It helps exactly this profile
+      # and does nothing when there is no load.
+      - -c
+      - commit_delay=200
+      - -c
+      - commit_siblings=5
+      # The durability switch — the only setting here with a price. Turning
+      # it off speeds writes up (+10% on its own, +24% together with dropping
+      # the duplicate indexes) but loses the last ~200 ms of acknowledged
+      # messages if the operating system or hardware fails. An application
+      # crash stays safe either way. It defaults to on and should be changed
+      # deliberately through .env.
+      - -c
+      - synchronous_commit=${PG_SYNCHRONOUS_COMMIT:-on}
+
+  app:
+    build: .
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-hexeris}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-hexeris}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is not set}
+      SERVER_ENC_KEY: ${SERVER_ENC_KEY:?SERVER_ENC_KEY is not set}   # ⚠ store separately: it encrypts the database and files
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is not set}
+      APP_NAME: ${APP_NAME:-Hexeris}
+      ADMIN_KEY: ${ADMIN_KEY:-}
+      ADMIN_ALLOWED_IPS: ${ADMIN_ALLOWED_IPS:-}
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
+      TURN_SECRET: ${TURN_SECRET:-}
+      TURN_URLS: ${TURN_URLS:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_CONTACT: ${VAPID_CONTACT:-}
+      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-50}
+      WS_COMPRESSION: ${WS_COMPRESSION:-true}
+      DEBUG_MESSAGE_LOG: ${DEBUG_MESSAGE_LOG:-0}
+      DB_BACKUP_ENABLED: ${DB_BACKUP_ENABLED:-false}
+      DB_BACKUP_INTERVAL_HOURS: ${DB_BACKUP_INTERVAL_HOURS:-24}
+      DB_BACKUP_KEEP: ${DB_BACKUP_KEEP:-7}
+    volumes:
+      - appdata:/data
+    expose:
+      - "8080"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is not set}
+    volumes:
+      # The base config is ours as well: the stock worker_connections=1024
+      # is too low, because one WebSocket user occupies two slots (client to
+      # proxy and proxy to app).
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot:ro
+
+  # Automatic certificate renewal over the webroot challenge. The first
+  # issuance is a one-off step; see docs/DEPLOY.md.
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'
+
+  coturn:
+    image: coturn/coturn:4.6-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    network_mode: host        # a relay needs the real IP and a UDP port range
+    volumes:
+      - ./deploy/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+
+volumes:
+  pgdata:
+  appdata:
+  certbot-webroot:
