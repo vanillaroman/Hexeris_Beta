@@ -1,0 +1,22 @@
+# Compiled binaries
+server/hexeris
+hexeris
+
+# Secrets / local env
+.env
+.env.*
+!*.env.example
+
+# TLS material
+*.pem
+*.key
+
+# Uploads
+uploads/
+server/server
+__pycache__/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
