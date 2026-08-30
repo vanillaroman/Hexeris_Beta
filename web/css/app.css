@@ -1,0 +1,3356 @@
+
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  /* Remove the rectangular tap highlight on mobile: on cancel/delete buttons and
+     the like it was drawn as a rectangle over a rounded button. Feedback on press
+     comes from the buttons' own :active. */
+  * { -webkit-tap-highlight-color: transparent; }
+
+  /* ── Text selection: interface versus content ───────────────────────────
+     By default the browser treats everything as text, so dragging the mouse over
+     the contact list selected names and previews, and a long press on a phone
+     raised the system "Copy / Look Up" menu over our interface. The user needs
+     neither: a contact name is a button label, not text to copy.
+
+     The rule: controls are not selectable, CONTENT always is. Message bodies,
+     quotes, input fields and modals stay copyable — copying a message is a basic
+     expectation and must not be broken.
+
+     -webkit-touch-callout: none is needed separately from user-select: on iOS the
+     system menu on a long press appears even where selection is forbidden. */
+  .sidebar, .sidebar-logo, .sidebar-me, .sidebar-settings,
+  .contacts-list, .contact-item, .contact-avatar, .contact-info,
+  .contact-name, .contact-preview, .contact-pin, .contacts-empty,
+  .name-pin, .name-mute, .unread-badge, .go-dot, .group-online, .is-group,
+  .archive-row, .arc-label, .arc-count, .arc-ico,
+  .chat-header, .chat-hdr-btn, .chat-empty,
+  .dropdown-menu, .dropdown-item, .dd-label, .dropdown-divider,
+  /* Context menu items: dragging a finger or a held-down cursor across them used
+     to select their labels — a chooser menu is not text, there is nothing in it
+     to copy. */
+  .ctx-menu, .ctx-item, .emoji-picker, .emoji-btn,
+  .msg-day, .msg-time, .msg-status, .msg-edited, .msg-menu-btn,
+  .reactions-bar, .reaction-chip, .rcount, .fwd-badge, .media-dl-btn,
+  .msg-expand, .auth-tab, .e2e-badge, .tab,
+  button, .btn, .hex-btn {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* Content is selectable. These rules come AFTER the forbidding ones so that
+     nesting (a .msg-bubble is never inside .contacts-list, but a .msg-time inside
+     a .msg-bubble is) resolves in favour of the more specific case. */
+  .msg-bubble, .msg-longtext, .msg-reply-quote, .msg-sender, .msg-file,
+  .hex-modal, .profile-modal, .nt-detail,
+  input, textarea, [contenteditable="true"], .selectable {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+
+  /* Inside a bubble the time and status stay unselectable: otherwise copying a
+     message would drag "12:34 ✓✓" along with it. */
+  .msg-bubble .msg-time,
+  .msg-bubble .msg-status,
+  .msg-bubble .msg-edited {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* While the context menu is open there is nothing to select.
+     A long press and right-click are the same gestures used to select text, and
+     selection is deliberately allowed on a message body (copying a message is a
+     basic expectation). Because of that the highlight managed to appear and hung
+     under the already open menu. The class is set in clearTextSelection() and
+     removed on close; input fields are left alone — they may hold an unfinished
+     draft with a caret. */
+  body.ctx-open .msg-bubble,
+  body.ctx-open .msg-bubble *,
+  body.ctx-open .msg-longtext,
+  body.ctx-open .msg-reply-quote,
+  body.ctx-open .msg-sender,
+  body.ctx-open .msg-file {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  :root {
+    /* ── Palette. The dark theme is the base; the light theme redefines THESE
+       SAME tokens below, so the rest of the file knows nothing about themes and
+       should not. The rule: a new colour is declared here and no literals appear
+       in the rules — otherwise it stays dark in the light theme, and that gets
+       discovered at the customer's end. */
+    /* ── The family's hue ────────────────────────────────────────────────
+       The background is not a neutral charcoal but a blue charcoal from the same
+       family as the accent: hue 212 against Prussian's 205. The background used
+       to be almost grey (#0f1015), and the blue accent sat on it like a sticker
+       rather than part of the palette.
+
+       Saturation FALLS with lightness: the lighter the surface, the closer it is
+       to neutral. The opposite (equal saturation at every step) gives an "everything
+       is drenched in blue" effect — light panels start competing with the accent
+       for attention. */
+    --bg:       #0a0e12;
+    --bg2:      #10151b;
+    --bg3:      #191f27;
+    --bg4:      #232b34;
+    --border:   #2c353f;
+    --text:     #e5e8eb;
+    /* Muted text. It was #7d8997 — a measured contrast of 4.02 against --bg4
+       (the chat preview) and 4.44 against --bubble-in (the time in a bubble),
+       against the WCAG AA requirement of 4.5. Lightening it by about a tenth
+       takes every place it is used past the threshold while staying noticeably
+       quieter than the main text. */
+    --muted:    #8b96a4;
+    --accent:   #003153;   /* Prussian blue — the anchor colour */
+    /* accent2 is the hover state, and it must be LIGHTER than the base one.
+       It used to be #00223d, that is, darker than #003153: on a nearly black
+       background hover pushed the button into the background and was invisible. */
+    --accent2:  #004475;
+    --accent-a: #002138;   /* press — this one really is darker */
+    --green:    #2F6B57;
+    --green-h:  #3A7A64;
+    --green-a:  #255446;
+    --online:   #34C88A; /* bright, lively online indicator */
+    --forest:   #2F6B57; /* slate green — online dots, pills, active bar */
+    /* Incoming — a muted dark grey surface with a blue undertone: it must not
+       compete with the outgoing one for attention. */
+    --bubble-in:  #1e232a;
+    /* Outgoing — the same Prussian, raised a couple of lightness steps so it
+       separates from the background. It used to be #1a2f6e — indigo, a foreign
+       hue: the interface accent and the colour of your own messages looked like
+       two different blues. */
+    --bubble-out: #00365c;
+    --bubble-out-text: #e8eef3;
+    --code-bg:    rgba(255,255,255,.06);
+    --code-text:  #d7dbf0;
+    --scheme:     dark;   /* goes into color-scheme: scrollbars and input fields */
+
+    /* ── Glass ──────────────────────────────────────────────────────────────
+       Separate tokens, because in the light theme not only the colour changes but
+       the physics itself: a dark surface over a light background reads differently
+       from a light one over dark, and a single pair of values for both themes
+       gives mud.
+
+       --glass-bg is deliberately NOT close to transparent. It used to be .12, and
+       while scrolling, message bubbles ran past under the header — the peer's name
+       got lost on them. Glass must mute the background, not show it. */
+    --glass-bg:      rgba(13, 18, 24, .60);
+    --glass-blur:    28px;
+    --glass-sat:     1.8;
+    --glass-line:    rgba(255, 255, 255, .06); /* the inner edge — this is what reads as "glass" */
+    --glass-border:  rgba(255, 255, 255, .05);
+    --focus:         #47a1e1;   /* keyboard focus ring */
+    /* The encryption badge. The gradient is soft and diagonal: it should read as
+       volume rather than as a separately drawn button. The colours used to be
+       literals (#0d2e1c/#1a5c38) — that is, they would stay dark in the light
+       theme, like any literal that bypasses the tokens. */
+    --e2e-bg:     linear-gradient(145deg, #17482c 0%, #0b2417 100%);
+    --e2e-border: rgba(38, 122, 78, .55);
+    /* The composer glass on a phone — separate from the general one. The header
+       has the opposite job: the peer's name must be readable over the bubbles
+       running past, so it is dense there. In the composer the input field and the
+       buttons have their OWN opaque background, readability does not depend on
+       the panel at all — and the shared 28px blur at 58% fill simply wiped out the
+       message text passing underneath. */
+    --composer-bg:   rgba(13, 18, 24, .32);
+    --composer-blur: 10px;
+    /* The scrollbar thumb. It used to be painted --border — a BORDER colour, not
+       one contrasting with the ground. On an ordinary background that was still
+       readable, but on the tinted ground of a code block (--code-bg over a bubble)
+       it merged completely: the recipient of a command saw a truncated line and
+       did not realise it could be scrolled. Semi-transparent white works on every
+       ground at once — on the dark background and on the blue outgoing bubble. */
+    --scroll-thumb:       rgba(255, 255, 255, .24);
+    --scroll-thumb-hover: rgba(255, 255, 255, .40);
+    /* The colour of the fade at the edge of a code block. Opaque: it must COVER
+       the text underneath, not tint it. */
+    --code-edge: #14191f;
+    --font:      'Inter', system-ui, -apple-system, sans-serif;
+    --font-head: 'IBM Plex Serif', Georgia, serif;
+    --font-name: 'Bitter', Georgia, serif;
+    --mono: 'DM Mono', monospace;
+
+    /* ── Design tokens (UI foundation) ──────────────────────────────────────
+       The values are exactly those already used in the project: migrating literals
+       to var(...) changes nothing visually but gives a single source of truth.
+       Further features should rely on these tokens rather than on raw px/hex. */
+
+    /* Semantic colors — success/warning/danger. Danger currently has 4 shades (as
+       in the code); they could be reduced to one in a separate step. */
+    --success:        var(--online);
+    --warning:        #e0a63c;
+    --danger:         #e5534b; /* the main destructive/error colour */
+    --danger-soft:    #e05c5c; /* softer — the "Delete" text in the context menu */
+    --danger-strong:  #e03c3c; /* more saturated — accented warnings */
+    --danger-hover:   #f07070; /* hover state of danger text */
+    /* Semi-transparent danger variants. The code used to write
+       var(--danger-soft)44 — a browser does NOT parse that (var() is substituted
+       as a separate token, the value becomes invalid and the whole rule is
+       dropped), which is why .gp-leave lost both its border and its hover
+       background. We keep ready-made rgba tokens. */
+    --danger-border:  rgba(224, 92, 92, .27);
+    --danger-bg:      rgba(224, 92, 92, .09);
+    --call-online:    #2ecc71; /* green indicator of an active call */
+    /* Links inside cards (email, phone in another person's profile). A separate
+       token, because --accent is too dark for text on a dark background, and the
+       other way round in the light theme. */
+    --accent-link:    #6db3ff;
+    --mark-bg:        rgba(0, 49, 83, .85);
+    --mark-fg:        #e8eef3;
+
+    /* Spacing scale (4px base). */
+    --space-1: 4px;  --space-2: 8px;  --space-3: 12px;
+    --space-4: 16px; --space-5: 24px; --space-6: 32px;
+
+    /* Radius scale. */
+    --radius-xs:   6px;
+    --radius-sm:   8px;
+    --radius-md:   12px;
+    --radius-lg:   16px;
+    --radius-pill: 999px;
+
+    /* Shadows. */
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.3);
+    --shadow-md: 0 8px 24px rgba(0,0,0,.4);
+    --shadow-lg: 0 24px 60px -20px rgba(0,0,0,.7);
+    /* The scrim under a dialog. A token rather than a literal: in the light theme
+       the same level looks like a heavy fill over a light page. */
+    --scrim: rgba(0, 0, 0, .55);
+
+    /* Font sizes. */
+    --fs-xs: 11px; --fs-sm: 12.5px; --fs-md: 14px; --fs-lg: 16px; --fs-xl: 20px;
+
+    /* Transitions. */
+    --transition-fast: .13s ease;
+    --transition:      .2s ease;
+
+    /* Z-index layers (matching the actual values in the code). */
+    --z-header:   12;
+    --z-dropdown: 40;
+    --z-ctx:      300;
+    --z-toast:    11000;
+    --z-modal:    12000;
+  }
+
+  /* ── Light theme ───────────────────────────────────────────────────────────
+     Set as an attribute on <html> (see web/js/theme.js) rather than by a media
+     query: the user's choice must beat the system setting, otherwise the toggle
+     in settings works only every other time. The system preference is taken into
+     account once — on first launch, when there is no choice of their own yet.
+
+     The background is not white: #ffffff in a messenger with dark code blocks
+     next to it gives too harsh a contrast over a long feed. A warm near-white
+     reads more calmly and does not burn the eyes in a bright office. */
+  :root[data-theme="light"] {
+    /* Warm beige instead of cold white. The project's blue accent reads more
+       calmly on a warm ground than on pure white: white with Prussian blue gives
+       an "office" contrast, beige a paper one. */
+    --bg:       #f2ede3;   /* the page — warm paper */
+    --bg2:      #fbf8f2;   /* cards and the side column — cream */
+    --bg3:      #eae3d6;   /* input fields, hover */
+    --bg4:      #ddd5c5;   /* press, selected row */
+    --border:   #ddd4c3;
+    --text:     #2a2620;   /* warm near-black, not bluish */
+    /* It used to be #6b6d82: 4.0 against --bg4 and 3.04 on dialog glass. Here it
+       is the other way round — darker; the light theme needs the opposite move. */
+    --muted:    #625b4e;   /* warm muted; checked for AA against every background, including --bg4 */
+    --accent:   #1f5c8f;
+    --accent2:  #17456b;
+    --green:    #2F6B57;
+    --green-h:  #276352;
+    --green-a:  #1f5546;
+    --online:   #17a06a;
+    --forest:   #2F6B57;
+    --bubble-in:  #fbf8f2;
+    --bubble-out: #d3e2f2;   /* our own bubble stays blue — that is the identifying mark */
+    --bubble-out-text: #12233f;
+    --code-bg:    rgba(42,38,32,.07);
+    --code-text:  #3a342b;
+    --scheme:     light;
+
+    /* .62 was enough for headers over a light background, but a dialog lies over
+       a SCRIM — and through it the glass came out grey (rgb 200), which made
+       muted text on it 3.04. Denser — and the surface stays light in any
+       surroundings. */
+    --glass-bg:     rgba(251, 248, 242, .93);
+    --glass-blur:   28px;
+    --glass-sat:    1.6;
+    --glass-line:   rgba(255, 253, 248, .8);
+    --glass-border: rgba(42, 38, 32, .10);
+    --focus:        #1f5c8f;
+    /* In the light theme the same badge is light, otherwise the dark green
+       circle becomes the only dark spot in the header. */
+    --e2e-bg:     linear-gradient(145deg, #dff3e6 0%, #bfe6cd 100%);
+    --e2e-border: rgba(28, 122, 74, .35);
+    --composer-bg: rgba(251, 248, 242, .45);
+    --scroll-thumb:       rgba(42, 38, 32, .28);
+    --scroll-thumb-hover: rgba(42, 38, 32, .45);
+    --code-edge: #eae3d6;
+
+    /* Shadows on a light background must be noticeably weaker: the same values
+       that work on dark turn into dirty smudges. */
+    --shadow-sm: 0 1px 2px rgba(60,50,35,.09);
+    --shadow-md: 0 8px 24px rgba(60,50,35,.14);
+    --shadow-lg: 0 24px 60px -20px rgba(60,50,35,.28);
+    --scrim: rgba(48, 40, 28, .40);
+    /* The red from the dark theme gives 3.59 on white — the light theme needs
+       its own, deeper shades. Without these lines it inherited the dark ones. */
+    --danger:         #c62f28;
+    --danger-soft:    #c0392f;
+    --danger-strong:  #b02620;
+    --danger-hover:   #a8221c;
+    --danger-border:  rgba(176, 38, 32, .30);
+    --danger-bg:      rgba(176, 38, 32, .08);
+    --warning:        #8a5e0f;   /* checked for AA against light backgrounds — #9a6a12 gave 4.23 */
+    --accent-link:    #14507f;
+    --mark-bg:        rgba(31, 92, 143, .22);
+    --mark-fg:        var(--text);
+  }
+
+  /* A white bubble on a nearly white background does not read as a separate
+     object on its own — in the dark theme the contrast of the grounds did that
+     job. We bring the border back: without it the feed loses structure in the
+     light theme. */
+  :root[data-theme="light"] .msg-row.in .msg-bubble {
+    border: 1px solid var(--border);
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: var(--fs-md); overscroll-behavior: none; }
+  /* color-scheme is handed to the browser so that the system parts — scrollbars,
+     the caret, autofill — match the page theme. Without it the light theme keeps
+     dark scrollbars, and that is the first thing you notice. */
+  html { background: var(--bg); color-scheme: var(--scheme); }
+
+  /* ── AUTH SCREEN ─────────────────────────────────────── */
+  #auth-screen {
+    min-height: 100vh;
+    min-height: 100dvh;    /* Chrome Android fix */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+  }
+
+  .auth-box {
+    width: 360px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 40px 36px;
+  }
+
+  .auth-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .auth-subtitle {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 26px;
+  }
+
+  .auth-logo-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .auth-logo-icon svg { width: 20px; height: 20px; }
+  .auth-logo-name { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+
+  /* The sign-in form appears in a single movement, already in its final shape.
+     Without this you could watch it being assembled: first the card, then the
+     tabs, then the Google button. */
+  #auth-screen { opacity: 0; transition: opacity .18s ease-out; }
+  #auth-screen.ready { opacity: 1; }
+  /* Application start: the form stands UNDER the opaque #app-loading, so nobody
+     sees it fade in anyway. We show it instantly so that only the overlay fades:
+     two overlapping fades (the form appearing, the overlay dimming) produced
+     frames where the spinner hung over a semi-transparent form — and that read as
+     flicker. The class is removed after the first frame, so signing out still uses
+     a transition. */
+  #auth-screen.instant { transition: none; }
+  @media (prefers-reduced-motion: reduce) {
+    #auth-screen { transition: none; }
+  }
+  /* The Google button is drawn by a Google iframe and appears with a delay.
+     We reserve its height in advance, otherwise the card jumps at the moment of
+     insertion. 40px is the height of a large-size button. */
+  /* The divider between the password and the alternative sign-in methods. */
+  .auth-sep { display: flex; align-items: center; gap: 12px; margin: 16px 0 12px; }
+  .auth-sep span { flex: 1; height: 1px; background: var(--border); }
+  .auth-sep em { color: var(--muted); font-size: 12px; font-style: normal; }
+
+  /* The Google button is drawn in a foreign <iframe> and its light ground cannot
+     be reached with our styles. So we frame it from the outside: a rounded
+     container with the theme background and overflow:hidden cuts off the light
+     corners that made the button look like a white slab on a dark form.
+
+     min-height holds the space BEFORE GSI loads: the iframe arrives
+     asynchronously, and without a reserved height the form jumped when it
+     appeared — which is what read as flicker on the sign-in page. */
+  #google-auth-block .g_id_signin {
+    min-height: 44px;
+    display: inline-block;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--bg3);
+    line-height: 0;            /* removes the gap under the inline frame */
+  }
+  #google-auth-block .g_id_signin > div,
+  #google-auth-block .g_id_signin iframe { border-radius: 10px; }
+
+  /* Appearing without a jerk: until GSI has rendered there is nothing to show,
+     and an abrupt opacity jump is more noticeable to the eye than the arrival of
+     the button itself. The smoothness is enabled by the ready class from
+     bootstrap.js. */
+  #google-auth-block { opacity: 0; transition: opacity .18s ease; }
+  #google-auth-block.ready { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    #google-auth-block { transition: none; }
+  }
+
+  .auth-tabs {
+    /* Hidden by default: public registration is off (the common case), and the
+       tab row must not flash and "jump" during loading. bootstrap.js shows it
+       (flex) only when registrationEnabled === true. */
+    display: none;
+    background: var(--bg3);
+    border-radius: var(--radius-sm);
+    padding: 3px;
+    margin-bottom: 24px;
+    gap: 3px;
+  }
+
+  .auth-tab {
+    flex: 1;
+    padding: 7px;
+    text-align: center;
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--muted);
+    transition: all .15s;
+    user-select: none;
+  }
+
+  .auth-tab.active { background: var(--bg4); color: var(--text); font-weight: 500; }
+
+  .auth-field { margin-bottom: 14px; }
+
+  .auth-field label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+
+  .auth-field input {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 14px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: var(--fs-md);
+    outline: none;
+    transition: border-color .15s;
+  }
+
+  .auth-field input:focus { border-color: var(--accent); }
+
+  /* ── Buttons: one shared base ─────────────────────────────────────────────
+     Every button in the app (.btn and the historical .auth-btn/.hex-btn/.fp-btn/
+     .gp-act/.gp-leave/.dropdown-item) inherits typography, cursor, transition and —
+     more importantly — the SHARED :focus-visible and :disabled states from here,
+     which no button had before: focus from the keyboard was invisible, and a
+     disabled button looked and clicked like an active one.
+     The class names are kept deliberately: moving 30+ places in the markup onto
+     .btn would give the same pixels at a real risk of regressions. .btn is the
+     canonical class for new code. */
+  .btn, .auth-btn, .hex-btn, .fp-btn, .gp-act, .gp-leave, .dropdown-item {
+    font-family: var(--font);
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .btn:focus-visible, .auth-btn:focus-visible, .hex-btn:focus-visible,
+  .fp-btn:focus-visible, .gp-act:focus-visible, .gp-leave:focus-visible,
+  .gp-close:focus-visible, .new-chat-btn:focus-visible {
+    outline: 2px solid var(--online);
+    outline-offset: 2px;
+  }
+  .btn:disabled, .auth-btn:disabled, .hex-btn:disabled, .fp-btn:disabled,
+  .gp-act:disabled, .gp-leave:disabled, .dropdown-item:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+  /* The canonical .btn for new code: a neutral button plus modifiers. */
+  .btn {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+    transition: background var(--transition-fast), color var(--transition-fast);
+  }
+  .btn:hover { color: var(--text); background: var(--bg3); }
+  .btn--primary { background: var(--accent); color: #fff; border-color: transparent; }
+  .btn--primary:hover { background: var(--accent2); color: #fff; }
+  .btn--danger { background: #b5352d; color: #fff; border-color: transparent; }
+  .btn--danger:hover { background: #c8403a; }
+  .btn--block { width: 100%; }
+
+  .auth-btn {
+    width: 100%;
+    margin-top: 8px;
+    padding: 11px;
+    background: var(--accent);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: #fff;
+    font-size: var(--fs-md);
+    font-weight: 600;
+    transition: background .15s, transform .1s;
+  }
+
+  .auth-btn:hover { background: var(--accent2); }
+  .auth-btn:active { transform: scale(0.98); }
+
+  /* A secondary action on the sign-in screen — "go back" from the second step.
+     A button and not a link, deliberately: it invokes a handler, and keyboard
+     navigation must treat it as a button. */
+  .auth-link {
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 6px;
+    text-decoration: underline;
+  }
+  .auth-link:hover { color: var(--text); }
+
+  /* The error bar. Background and border go through --danger-bg/--danger-border
+     rather than the literals #2d1a1a/#5a2020 they used to be: a literal stays dark
+     maroon in the light theme too, where a white dialog surrounds it. The tokens
+     are already described for both themes and are used by other warnings. */
+  .auth-error {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    border-radius: var(--radius-sm);
+    color: var(--danger-hover);
+    font-size: 13px;
+    display: none;
+  }
+
+  /* ── CHAT SCREEN ─────────────────────────────────────── */
+  #chat-screen {
+    display: none;
+    /* Height is the dynamic viewport (`100dvh`): it already excludes the
+       mobile browser's toolbars across Chrome, Edge, Firefox and Safari, and
+       — together with `interactive-widget=resizes-content` in the viewport
+       meta — shrinks when the on-screen keyboard opens so the composer stays
+       visible. `100vh` is the fallback for engines without `dvh`. No
+       JS-driven pixel height: it made this fixed box thrash on every
+       address-bar show/hide. */
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 100vh;
+    height: 100dvh;
+    flex-direction: row;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 260px;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  .sidebar-header {
+    padding: max(18px, calc(env(safe-area-inset-top) + 6px)) 16px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .sidebar-logo {
+    width: 28px;
+    height: 28px;
+    background: var(--accent);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .sidebar-logo svg { width: 16px; height: 16px; }
+  .sidebar-appname { font-size: 15px; font-weight: 600; flex: 1; }
+
+  .sidebar-me {
+    font-size: 12px;
+    color: var(--muted);
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .sidebar-me:hover { background: var(--bg3); }
+  .me-avatar {
+    width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-ava, inherit); font-size: 13px; font-weight: 600;
+    overflow: hidden;
+  }
+  .me-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
+  #me-label { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .me-position { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .me-position:empty { display: none; }
+
+  .me-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--online); box-shadow: 0 0 0 3px rgba(52,200,138,.2); flex-shrink: 0; }
+
+  .new-chat-wrap { padding: 12px; border-bottom: 1px solid var(--border); display: flex; gap: 6px; }
+  .new-chat-wrap .new-chat-input { flex: 1; min-width: 0; }
+  .new-chat-wrap .new-chat-btn { flex-shrink: 0; }
+
+  .new-chat-input {
+    flex: 1;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 7px 12px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    outline: none;
+  }
+
+  .new-chat-input:focus { border-color: var(--accent); }
+
+  .new-chat-btn {
+    background: var(--accent);
+    border: none;
+    border-radius: var(--radius-sm);
+    width: 34px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background .15s;
+  }
+
+  .new-chat-btn:hover { background: var(--accent2); }
+  .new-chat-btn svg { width: 16px; height: 16px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; }
+
+  .contacts-list { flex: 1; overflow-y: auto; }
+
+  .contact-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background .1s;
+    border-bottom: 1px solid #1a1b22;
+  }
+
+  .contact-item:hover { background: var(--bg3); }
+  .contact-item.active { background: var(--bg4); }
+
+  .contact-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .contact-info { flex: 1; min-width: 0; }
+  .contact-name { font-size: 13px; font-weight: 500; color: var(--text); }
+  .contact-preview { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .contact-online-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
+  .contact-online-dot.online { background: var(--online); box-shadow: 0 0 0 3px rgba(52,200,138,.2); }
+
+  /* The avatar container — only so the indicator has something to anchor to. */
+  .contact-av { position: relative; flex-shrink: 0; display: flex; }
+
+  /* ⚠️ The position is set by PLACE (a descendant of .contact-av), NOT by a class
+     on the element itself. That is not a stylistic detail but a fix for a concrete
+     breakage.
+
+     The live presence update does `dot.className = presenceDotClass(...)` — that
+     is, it replaces the ENTIRE CLASS LIST (transport.js, ui.js). presenceDotClass
+     knows about state (online, pr-busy, pr-away) and nothing about place. While
+     the positioning class sat on the element itself, the very first status update
+     wiped it: the dot lost position:absolute, fell into the flex flow and "jumped"
+     up, ending next to the avatar. It showed up on repeated clicks on a contact
+     (a click pulls presence) and only for people — groups have a different
+     indicator and nobody rewrites it through className.
+
+     The rule that follows: a class is responsible for STATE, a structural selector
+     for PLACE. Then JS is free to rewrite classes however it likes and cannot
+     break the layout. */
+  .contact-av > .contact-online-dot,
+  .contact-av > .group-online {
+    position: absolute;
+    right: -1px; bottom: -1px;
+    box-shadow: 0 0 0 2.5px var(--bg2);
+  }
+  .contact-av > .contact-online-dot.online {
+    box-shadow: 0 0 0 2.5px var(--bg2), 0 0 6px rgba(52,200,138,.55);
+  }
+  .contact-item.active .contact-av > .contact-online-dot { box-shadow: 0 0 0 2.5px var(--bg3); }
+  .contact-item.active .contact-av > .contact-online-dot.online {
+    box-shadow: 0 0 0 2.5px var(--bg3), 0 0 6px rgba(52,200,138,.55);
+  }
+  /* The "N online" counter of a group — the same technique, but wider than a dot. */
+  .contact-av > .group-online {
+    right: -4px; bottom: -4px;
+    padding: 0 4px; border-radius: 8px; background: var(--bg4);
+    font-size: 10px; line-height: 15px;
+  }
+
+  /* ── List section headings ───────────────────────────────────────────
+     They appear only when there are pinned conversations: over a flat list a lone
+     "All chats" caption is noise, not structure. */
+  .list-section {
+    font-size: 10px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    padding: 12px 10px 5px;
+  }
+  .list-section:first-child { padding-top: 4px; }
+
+  .sidebar-footer {
+    padding: 8px 14px max(8px, calc(env(safe-area-inset-bottom) - 12px));
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .logout-btn {
+    width: 100%;
+    padding: 5px 8px;
+    min-height: 30px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: 11.5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all .15s;
+  }
+
+  .logout-btn:hover { border-color: #c04040; color: var(--danger-hover); }
+  .logout-btn:active { background: var(--bg3); }
+  .logout-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
+
+  /* Chat area */
+  .chat-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    min-width: 0;
+    min-height: 0;   /* important for flex scroll */
+    overflow: hidden;
+  }
+
+  .chat-header {
+    padding: max(14px, calc(env(safe-area-inset-top) + 6px)) 20px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg2);
+    flex-shrink: 0;  /* does not shrink — always visible */
+    z-index: 10;
+  }
+
+  .chat-header-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  /* min-width:0 lets this flex item shrink below its content's intrinsic
+     width — without it a long username with no spaces refuses to shrink and
+     stretches the whole header past the screen edge, throwing the chat out
+     of alignment. name/status then truncate with an ellipsis. */
+  .chat-header-info { flex: 1; min-width: 0; }
+  .chat-header-name { font-size: var(--fs-md); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-header-status { font-size: var(--fs-xs); color: var(--green); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .e2e-badge {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--fs-xs);
+    color: var(--green);
+    background: var(--e2e-bg);
+    border: 1px solid var(--e2e-border);
+    border-radius: 20px;
+    padding: 3px 10px;
+    cursor: pointer;
+    user-select: none;
+    transition: filter .15s;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .e2e-badge:hover { filter: brightness(1.25); }
+  }
+  .e2e-badge svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2.5; }
+
+  /* E2E popup */
+  .e2e-popup-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .e2e-popup-overlay.visible { display: flex; }
+  .e2e-popup {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 28px;
+    max-width: 400px;
+    width: 100%;
+  }
+  .e2e-popup-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .e2e-popup-icon {
+    width: 36px; height: 36px;
+    background: #0d2e1c;
+    border: 1px solid #1a5c38;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .e2e-popup-icon svg { width: 18px; height: 18px; stroke: var(--green); fill: none; stroke-width: 2; }
+  .e2e-popup-title { font-size: var(--fs-lg); font-weight: 600; color: var(--text); }
+  .e2e-popup-subtitle { font-size: 12px; color: var(--green); margin-top: 2px; }
+  .e2e-layer {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .e2e-layer-title {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    margin-bottom: 4px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .e2e-layer-title .lbadge {
+    font-size: 10px; border-radius: 4px;
+    padding: 1px 6px; font-weight: 500; color: #fff;
+  }
+  .e2e-layer-title .lbadge.blue { background: var(--accent); }
+  .e2e-layer-title .lbadge.green { background: #0f6e56; }
+  .e2e-layer-title .lbadge.teal { background: #0a5a6e; }
+  .e2e-layer-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .e2e-popup-close {
+    width: 100%; margin-top: 16px; padding: 10px;
+    background: var(--bg4); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--muted);
+    font-family: var(--font); font-size: 13px;
+    cursor: pointer; transition: background .15s;
+  }
+  .e2e-popup-close:hover { background: var(--bg3); color: var(--text); }
+
+  /* Empty state */
+  .chat-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--muted);
+  }
+
+  .chat-empty svg { width: 48px; height: 48px; stroke: var(--border); fill: none; stroke-width: 1.5; }
+  .chat-empty-title { font-size: var(--fs-lg); font-weight: 500; color: var(--muted); }
+  /* It was color:#3a3b4a — a measured contrast of 1.76 against a requirement of
+     4.5, that is, the label was barely readable. On top of that the literal stayed
+     dark in the light theme as well. */
+  .chat-empty-sub { font-size: 13px; color: var(--muted); }
+
+  /* Messages */
+  .messages-wrap {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 20px 20px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    /* iOS momentum scrolling */
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+
+  .msg-day {
+    text-align: center;
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    margin: 10px 0 6px;
+  }
+
+  .msg-row { display: flex; position: relative; } /* position:relative is needed for the swipe icon */
+  .msg-row.out { justify-content: flex-end; }
+  .msg-row.in { justify-content: flex-start; }
+
+  .msg-bubble {
+    /* A percentage ties readability to the window width: on a 1900px monitor 62%
+       gave lines of 150+ characters against a comfortable 45-75. The ch limit is
+       typographic rather than geometric: on a narrow screen the percentage
+       applies, on a wide one the line stops stretching. */
+    max-width: min(62%, 68ch);
+    padding: 8px 13px;
+    border-radius: 14px;
+    font-size: 13.5px;
+    line-height: 1.45;
+    word-break: break-word;
+    /* Line breaks are preserved. pre-wrap used to be set only on .msg-longtext
+       (messages longer than 2000 characters), so an ordinary multi-line command
+       was collapsed into one line — and commands here are forwarded to be run. */
+    white-space: pre-wrap;
+  }
+
+  .msg-row.in .msg-bubble {
+    background: var(--bubble-in);
+    color: var(--text);
+    border-bottom-left-radius: 3px;
+  }
+
+  .msg-row.out .msg-bubble {
+    background: var(--bubble-out);
+    /* The literal #c8d8f5 here was exactly the mistake the comment by the palette
+       warns about: in the light theme the bubble ground became light while the
+       text stayed light — the message was barely readable. The text colour must
+       change together with the ground, which means it is a token. */
+    color: var(--bubble-out-text);
+    border-bottom-right-radius: 3px;
+  }
+
+  .msg-time {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 3px;
+    display: block;
+    text-align: right;
+  }
+
+  .msg-row.in .msg-time { text-align: left; }
+
+  .msg-status { font-size: var(--fs-xs); color: var(--muted); margin-left: 4px; letter-spacing: -1px; }
+  .msg-status.sent { color: var(--muted); }
+  .msg-status.delivered { color: #8aa0b8; }
+  /* Read: brighter, bolder "read" — noticeable but still restrained. */
+  .msg-status.read { color: #4aa3ff; font-weight: 700; text-shadow: 0 0 6px rgba(74,163,255,.35); }
+  .msg-status.failed { color: var(--danger); }
+
+  /* Input */
+  .input-area {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    background: var(--bg2);
+    flex-shrink: 0;  /* always visible at the bottom, does not shrink */
+    z-index: 10;
+    /* Safe area for a notched iPhone */
+    padding-bottom: max(14px, calc(env(safe-area-inset-bottom) - 10px));
+  }
+
+  .msg-input-wrap { flex: 1; position: relative; }
+
+  .msg-textarea {
+    width: 100%;
+    display: block; /* textarea defaults to inline-block → baseline offset lifts it ~2px above the buttons */
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 8px 14px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 16px; /* iOS Safari zooms at font-size < 16px — do not change! */
+    resize: none;
+    outline: none;
+    min-height: 42px;
+    max-height: 120px;
+    overflow-y: auto;
+    transition: border-color .15s;
+    line-height: 1.4;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .msg-textarea:focus { border-color: var(--accent); }
+  .msg-textarea::placeholder { color: var(--muted); }
+
+  .send-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: var(--radius-md);
+    background: var(--accent);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background .15s, transform .1s;
+  }
+
+  /* :hover only for a real cursor — see the shared "Interface response" block.
+     On a touch screen :hover is not cleared after a tap: the button stays
+     highlighted until you touch something else. That is exactly what looked like
+     "send went grey and does not come back". */
+  @media (hover: hover) and (pointer: fine) {
+    .send-btn:hover { background: var(--accent2); }
+  }
+  .send-btn:active { transform: scale(0.95); }
+  .send-btn svg { width: 18px; height: 18px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; }
+
+  .attach-btn {
+    width: 42px; height: 42px; border-radius: var(--radius-md);
+    background: var(--bg3); border: 1px solid var(--border);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: background .15s;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .attach-btn:hover { background: var(--bg4); }
+  }
+  .attach-btn svg { width: 18px; height: 18px; stroke: var(--muted); fill: none; stroke-width: 2; stroke-linecap: round; }
+
+  /* ── Call UI ──────────────────────────────────────────── */
+  /* ── Call UI — Discord style ──────────────────────────── */
+  .call-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.82);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+  .call-overlay.visible { display: flex; }
+  .call-box {
+    background: #1e1f2e;
+    border: 1px solid #2a2c40;
+    border-radius: 24px;
+    padding: 40px 48px 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    min-width: 300px;
+    box-shadow: 0 24px 64px rgba(0,0,0,.5);
+  }
+
+  /* Avatar with pulse ring */
+  .call-avatar-wrap {
+    position: relative;
+    margin-bottom: 20px;
+  }
+  .call-avatar {
+    width: 88px; height: 88px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 34px; font-weight: 700; color: #fff;
+    position: relative;
+    z-index: 2;
+  }
+  .call-pulse {
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    opacity: 0;
+    display: none;
+  }
+  .call-pulse.ring1 { animation: callPulse 2s ease-out infinite; }
+  .call-pulse.ring2 { animation: callPulse 2s ease-out .6s infinite; }
+  .call-pulse.ring3 { animation: callPulse 2s ease-out 1.2s infinite; }
+  @keyframes callPulse {
+    0% { transform: scale(1); opacity: .5; }
+    100% { transform: scale(1.5); opacity: 0; }
+  }
+  .call-avatar-wrap.pulsing .call-pulse { display: block; }
+
+  .call-name {
+    font-size: 22px; font-weight: 700;
+    color: #e8e9f0;
+    margin-bottom: 6px;
+    letter-spacing: -.3px;
+  }
+  .call-status {
+    font-size: 13px; color: #6b6d82;
+    margin-bottom: 4px;
+    min-height: 20px;
+  }
+  .call-timer {
+    font-size: var(--fs-lg); color: var(--call-online);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 4px;
+    display: none;
+  }
+
+  /* Volume slider */
+  .call-volume {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    margin: 16px 0 8px;
+    width: 100%;
+  }
+  .call-volume.visible { display: flex; }
+  .call-volume svg { width: 16px; height: 16px; stroke: #6b6d82; fill: none; stroke-width: 2; flex-shrink: 0; }
+  .call-volume input[type=range] {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    background: #2a2c40;
+    border-radius: 2px;
+    outline: none;
+  }
+  .call-volume input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #003153;
+    cursor: pointer;
+  }
+
+  /* Buttons */
+  .call-btns {
+    display: flex;
+    gap: 16px;
+    margin-top: 28px;
+    align-items: flex-end;
+  }
+  .call-btn-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .call-btn-label {
+    font-size: var(--fs-xs);
+    color: #6b6d82;
+    font-weight: 500;
+  }
+  .call-btn {
+    width: 60px; height: 60px; border-radius: 50%;
+    border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .12s, opacity .15s;
+  }
+  .call-btn:hover { transform: scale(1.08); }
+  .call-btn:active { transform: scale(.95); }
+  .call-btn svg { width: 22px; height: 22px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; }
+
+  /* ── Video call layout ────────────────────────────────────── */
+  #remote-video, #local-video { display: none; }
+  .call-overlay.video-mode { background: #000; }
+  .call-overlay.video-mode #remote-video {
+    display: block; position: absolute; inset: 0;
+    width: 100%; height: 100%; object-fit: cover; background: #000; z-index: 0;
+  }
+  /* Our own video (PiP). Positioning lives on the wrapper — the <video> itself
+     and the camera-switch button sit inside it. When the control panel is shown
+     the window grows slightly, freeing space for the button. */
+  .local-video-wrap { display: none; }
+  .call-overlay.video-mode .local-video-wrap {
+    display: block; position: absolute;
+    top: calc(env(safe-area-inset-top) + 14px); right: 14px;
+    width: 96px; height: 132px;
+    border-radius: var(--radius-md); border: 2px solid rgba(255,255,255,.35);
+    background: #111; z-index: 3; overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0,0,0,.45);
+    transition: width var(--transition), height var(--transition);
+  }
+  /* Panel visible -> a larger window (the camera-switch button does not cover the face). */
+  .call-overlay.video-mode.controls-visible .local-video-wrap {
+    width: 124px; height: 168px;
+  }
+  .call-overlay.video-mode #local-video {
+    display: block; width: 100%; height: 100%; object-fit: cover;
+    transform: scaleX(-1); /* mirror self-view — as in a mirror */
+  }
+  /* The rear camera is NOT a selfie view and must not be mirrored: text and
+     gestures would come out reversed. */
+  .call-overlay.video-mode.rear-camera #local-video { transform: none; }
+
+  /* The camera-switch button: only when the panel is shown AND there is more
+     than one camera (the has-multi-cam class is set by JS via enumerateDevices). */
+  .flip-cam-btn {
+    display: none; position: absolute; right: 4px; bottom: 4px;
+    width: 30px; height: 30px; padding: 0;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,.55); color: #fff;
+    border: 1px solid rgba(255,255,255,.25); border-radius: var(--radius-pill);
+    transition: background var(--transition-fast), opacity var(--transition);
+  }
+  .call-overlay.video-mode.controls-visible.has-multi-cam .flip-cam-btn { display: flex; }
+  .flip-cam-btn svg { width: 16px; height: 16px; }
+  .flip-cam-btn:hover { background: rgba(0,0,0,.75); }
+  .flip-cam-btn:disabled { opacity: .4; }
+
+  /* Hiding the panel on tap: we animate opacity and disable clicks, but NOT
+     display:none — otherwise there would be no smooth return. */
+  .call-overlay.video-mode .call-box {
+    transition: opacity var(--transition), transform var(--transition);
+  }
+  .call-overlay.video-mode:not(.controls-visible) .call-box {
+    opacity: 0; pointer-events: none; transform: translateY(12px);
+  }
+  .call-overlay.video-mode .call-avatar-wrap { display: none; }
+  .call-overlay.video-mode .call-box {
+    position: absolute; left: 0; right: 0; bottom: 0; top: auto;
+    min-width: 0; width: 100%;
+    background: linear-gradient(transparent, rgba(0,0,0,.6));
+    border: none; border-radius: 0; box-shadow: none;
+    padding: 48px 16px calc(22px + env(safe-area-inset-bottom));
+    z-index: 2;
+  }
+  .call-overlay.video-mode .call-name { color: #fff; }
+  .call-overlay.video-mode .call-status { color: rgba(255,255,255,.85); }
+  .call-btn.end { background: var(--danger-strong); width: 68px; height: 68px; }
+  .call-btn.end svg { width: 26px; height: 26px; }
+  .call-btn.accept { background: #1a9c5b; width: 68px; height: 68px; }
+  .call-btn.accept svg { width: 26px; height: 26px; }
+  .call-btn.mute { background: #2a2c40; }
+  .call-btn.mute.active { background: var(--danger-strong); }
+  .call-btn.vol { background: #2a2c40; }
+
+  /* ── Call bar — minimized indicator ─────────────────── */
+  .call-bar {
+    display: none;
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    height: 32px;
+    background: #1a4a2e;
+    border: 1px solid #2a6a3e;
+    border-radius: 20px;
+    z-index: 150;
+    align-items: center;
+    gap: 10px;
+    padding: 0 6px 0 12px;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4);
+    white-space: nowrap;
+  }
+  .call-bar.visible { display: flex; }
+  .call-bar-left { display: flex; align-items: center; gap: 6px; }
+  .call-bar-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--call-online);
+    animation: callBarPulse 1.5s ease-in-out infinite;
+  }
+  @keyframes callBarPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .4; }
+  }
+  .call-bar-name { font-size: 13px; font-weight: 600; color: var(--call-online); }
+  .call-bar-timer { font-size: 12px; color: var(--call-online); font-variant-numeric: tabular-nums; }
+  .call-bar-end {
+    background: var(--danger-strong);
+    border: none; border-radius: 14px;
+    padding: 4px 10px;
+    color: #fff; font-size: var(--fs-xs); font-weight: 600;
+    cursor: pointer;
+  }
+  .call-bar-end:hover { background: #c0392b; }
+
+  .upload-progress {
+    display: none;
+    padding: 6px 16px;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+  }
+  .upload-progress.visible { display: block; }
+  .upload-progress-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .upload-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width .1s;
+    width: 0%;
+  }
+  .upload-progress-label {
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  /* ── File preview modal ─────────────────────────────────── */
+  .fp-modal {
+    display: none;
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,.65);
+    align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .fp-modal.active { display: flex; }
+  .fp-box {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px 28px 20px;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 10px;
+    min-width: 240px; max-width: 340px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.5);
+  }
+  .fp-box img {
+    max-width: 280px; max-height: 220px;
+    border-radius: var(--radius-sm); object-fit: contain;
+  }
+  .fp-icon { font-size: 52px; line-height: 1; }
+  .fp-fname {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    text-align: center; word-break: break-all; max-width: 280px;
+  }
+  .fp-fsize { font-size: var(--fs-xs); color: var(--muted); }
+  .fp-hint  { font-size: var(--fs-xs); color: var(--muted); }
+  .fp-hint kbd {
+    background: var(--bg4); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 5px; font-size: 10px;
+  }
+  .fp-actions { display: flex; gap: 10px; margin-top: 4px; }
+  .fp-btn {
+    padding: 7px 20px; border-radius: var(--radius-sm); border: none;
+    font-size: 13px; font-weight: 600;
+    transition: opacity .15s;
+  }
+  .fp-btn:hover { opacity: .85; }
+  .fp-cancel { background: var(--bg4); color: var(--muted); }
+  .fp-send   { background: var(--accent); color: #fff; }
+
+  .msg-image { max-width: 260px; max-height: 260px; height: auto; border-radius: var(--radius-sm); cursor: pointer; display: block; margin-bottom: 4px; }
+  .msg-video { max-width: 300px; height: auto; border-radius: var(--radius-sm); display: block; margin-bottom: 4px; outline: none; }
+  .msg-file { display: flex; align-items: center; gap: 8px; padding: 6px 0; color: inherit; text-decoration: none; }
+  .msg-file svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; flex-shrink: 0; }
+
+  /* ── Drop overlay ───────────────────────────────────────── */
+  .drop-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 90;
+    background: rgba(0, 49, 83, 0.82);
+    border: 2px dashed var(--accent);
+    border-radius: var(--radius-md);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    pointer-events: none;
+    backdrop-filter: blur(2px);
+  }
+  .drop-overlay.active { display: flex; }
+  .drop-overlay svg {
+    width: 52px; height: 52px;
+    stroke: var(--accent); fill: none;
+    stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+    opacity: .9;
+  }
+  .drop-overlay span {
+    font-size: var(--fs-lg); font-weight: 600;
+    color: var(--accent); letter-spacing: .2px;
+  }
+
+  .msg-menu-btn {
+    background: none; border: none; cursor: pointer; padding: 0 5px;
+    color: var(--muted); font-size: 18px; line-height: 1; opacity: 0; transition: opacity .15s;
+    position: absolute; top: 0; right: 2px;
+  }
+  .msg-bubble { position: relative; cursor: context-menu; }
+  .msg-bubble:hover .msg-menu-btn, .msg-menu-btn:focus { opacity: .9; }
+  .msg-edited { font-size: 10px; color: var(--muted); font-style: italic; margin-right: 5px; }
+  .msg-deleted { font-style: italic; color: var(--muted); font-size: 12px; }
+  /* Background and edge through the --glass-* tokens. The literals
+     rgba(22,23,29,.78) and rgba(255,255,255,.07) left the menu DARK in the light
+     theme, while its text comes from --text and turned dark along with the theme:
+     a right-click or a long press on a contact opened a dark window in which
+     nothing could be made out. The same breakage .hex-modal had. */
+  .ctx-menu { position: fixed; background: var(--glass-bg); -webkit-backdrop-filter: blur(24px) saturate(1.6); backdrop-filter: blur(24px) saturate(1.6); border: 1px solid var(--glass-border, var(--border)); border-radius: 10px; padding: 4px; z-index: var(--z-ctx); min-width: 160px; box-shadow: var(--shadow-md); display: block; opacity: 0; visibility: hidden; transform: scale(.95); transform-origin: top left; transition: opacity var(--transition-fast), transform var(--transition-fast), visibility .13s; pointer-events: none; }
+  .ctx-menu.visible { opacity: 1; visibility: visible; transform: scale(1); pointer-events: auto; }
+  .ctx-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--radius-xs); cursor: pointer; font-size: 13px; color: var(--text); transition: background .1s; }
+  .ctx-item:hover { background: var(--bg3); }
+  .ctx-item.danger { color: var(--danger-soft); }
+  .ctx-item svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; flex-shrink: 0; }
+  .reactions-bar { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+  .reaction-chip { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2px 8px; font-size: 13px; cursor: pointer; transition: background .1s; display: inline-flex; align-items: center; gap: 4px; }
+  .reaction-chip:hover { background: var(--bg4); }
+  .reaction-chip.mine { border-color: var(--accent); }
+  .reaction-chip .rcount { font-size: var(--fs-xs); color: var(--muted); }
+  /* Background and edge through tokens: with a literal the panel stayed dark in
+     the light theme, exactly like the context menu. */
+  .emoji-picker { position: fixed; background: var(--glass-bg); -webkit-backdrop-filter: blur(24px) saturate(1.6); backdrop-filter: blur(24px) saturate(1.6); border: 1px solid var(--glass-border, var(--border)); border-radius: var(--radius-md); padding: 8px; z-index: calc(var(--z-ctx) + 10); /* above ctx-menu */ display: flex; opacity: 0; visibility: hidden; transform: scale(.95); transform-origin: top left; transition: opacity var(--transition-fast), transform var(--transition-fast), visibility .13s; pointer-events: none; gap: 4px; flex-wrap: wrap; width: 192px; box-shadow: var(--shadow-md); }
+  .emoji-picker.visible { opacity: 1; visibility: visible; transform: scale(1); pointer-events: auto; }
+  .emoji-btn { font-size: 22px; cursor: pointer; padding: 4px; border-radius: var(--radius-xs); transition: background .1s, transform .1s; background: none; border: none; }
+  .emoji-btn:hover { background: var(--bg3); }
+  .emoji-btn:active { transform: scale(.8); }
+
+  /* ── Tap feedback + small motions ─────────────────────────── */
+  .msg-menu-btn { transition: opacity .15s, transform .1s; }
+  .msg-menu-btn:active { transform: scale(.8); }
+  .attach-btn { transition: background .15s, transform .1s; }
+  .attach-btn:active { transform: scale(.9); }
+  .ctx-item:active { background: var(--bg4); }
+  .reaction-chip { transition: background .1s, transform .1s; }
+  .reaction-chip:active { transform: scale(.9); }
+  @keyframes barSlideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+  #reply-bar-input, #edit-bar-input { animation: barSlideIn .16s ease; }
+  .reply-bar { display: none; padding: 10px 16px; background: var(--bg2); border-top: 1px solid var(--border); align-items: center; gap: 12px; min-height: 52px; }
+  .reply-bar.visible { display: flex; }
+  .reply-bar-text { flex: 1; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+  .reply-bar-text strong { color: var(--accent); font-size: 13px; }
+  .reply-bar-close { background: var(--bg4); border: none; cursor: pointer; color: var(--muted); font-size: 18px; line-height: 1; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .msg-reply-quote { background: rgba(255,255,255,.06); border-left: 3px solid var(--accent); border-radius: 4px; padding: 4px 8px; margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+  .msg-reply-quote strong { color: var(--accent); display: block; margin-bottom: 2px; font-size: var(--fs-xs); }
+  .fwd-badge { font-size: var(--fs-xs); color: var(--muted); margin-bottom: 2px; display: block; }
+
+  .typing-indicator {
+    display: none;
+    padding: 6px 20px 2px;
+    font-size: 12px;
+    color: var(--muted);
+    height: 22px;
+  }
+  .typing-indicator.visible { display: flex; align-items: center; gap: 6px; }
+  .typing-dots span {
+    display: inline-block;
+    width: 5px; height: 5px;
+    background: var(--muted);
+    border-radius: 50%;
+    animation: typingDot 1.2s infinite;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: .2s; }
+  .typing-dots span:nth-child(3) { animation-delay: .4s; }
+  /* The lower opacity point is dropped from .4 to .25: the blink must read even
+     when the bounce is turned off (see the reduce variant below). */
+  @keyframes typingDot {
+    0%, 60%, 100% { transform: translateY(0);    opacity: .25; }
+    30%           { transform: translateY(-4px); opacity: 1; }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  /* Avatar colors */
+  /* Avatars without a photo. Five colours are needed to tell people apart with
+     peripheral vision — but the previous set (indigo, green, purple, orange,
+     crimson) collected a rainbow in the sidebar that had nothing to do with the
+     product palette. Now all five sit in a cool blue-steel range: they differ by
+     hue rather than by "parrot brightness". The contrast of the letter against
+     the ground is above 5:1 everywhere. */
+  .av-0 { background:#163e5a; color:#8ebfe1; }
+  .av-1 { background:#1c424a; color:#8ed3e1; }
+  .av-2 { background:#263454; color:#8ea7e1; }
+  .av-3 { background:#324853; color:#8ec5e1; }
+  .av-4 { background:#1e433b; color:#8ee1d0; }
+
+  .no-chat { display: none; }
+
+  /* ── MOBILE ──────────────────────────────────────── */
+  .back-btn {
+    display: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px 4px 0;
+    color: var(--text);
+    align-items: center;
+  }
+  .back-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
+
+  @media (max-width: 600px) {
+    .sidebar {
+      width: 100%;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 10;
+      transition: transform .26s cubic-bezier(.4, 0, .2, 1);
+    }
+    .chat-area {
+      width: 100%;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 20;   /* above the sidebar so it slides over it */
+      transition: transform .26s cubic-bezier(.4, 0, .2, 1);
+      will-change: transform;
+    }
+    #chat-screen {
+      overflow-x: hidden; /* forbid horizontal scrolling; position:fixed is set above */
+    }
+    /* Prevent any content from exceeding the screen width */
+    html, body { overflow-x: hidden; }
+    .messages-wrap { overflow-x: hidden; }
+    .msg-bubble { max-width: 80%; overflow-x: hidden; }
+
+    /* Videos and images are never wider than the screen */
+    .msg-video { max-width: 100%; width: 100%; height: auto; }
+    .msg-image { max-width: 100%; height: auto; }
+
+    /* Slide instead of display:none. In chat view the list stays behind with a
+       slight parallax; in list view the chat sits off-screen to the right. */
+    .sidebar.hidden { transform: translateX(-14%); }
+    .chat-area.hidden { transform: translateX(100%); }
+    .back-btn { display: flex; }
+    /* 26px instead of 30px: the search and call icons next to it are drawn at
+       ~19px, and a 30px circle read as the largest element of the header — even
+       though it is a status, not the main action. We centre it vertically
+       explicitly: its neighbours have padding, the circle does not, and by default
+       they sat on different lines. */
+    .e2e-badge {
+      font-size: 0; min-width: 26px; width: 26px; height: 26px; padding: 0;
+      display: flex; justify-content: center; align-items: center;
+      border-radius: 50%; flex-shrink: 0; margin-left: auto; gap: 0;
+      align-self: center;
+    }
+    .e2e-badge svg { width: 13px; height: 13px; margin: 0; display: block; }
+    .chat-header-status { display: none; }
+
+    /* Auth inputs — 16px too, so it does not zoom */
+    .auth-field input { font-size: 16px; }
+    .new-chat-input { font-size: 16px; }
+  }
+
+  /* ── Swipe to reply icon (TG-style, appears on the right on a leftward swipe) ── */
+  .swipe-reply-icon {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%) scale(0.5);
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--bg4);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .swipe-reply-icon svg {
+    width: 13px;
+    height: 13px;
+    stroke: var(--muted);
+  }
+
+  /* ── Floating date badge (appears while scrolling) ── */
+  .floating-date-badge {
+    position: absolute;
+    /* Under the chat header (its height is in --feed-pad-top on #chat-main) so
+       the date does not run over the title, search and icons while scrolling. */
+    top: calc(var(--feed-pad-top, 62px) + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.45);
+    color: #e2e3ef;
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: var(--radius-md);
+    z-index: 20;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+    backdrop-filter: blur(4px);
+  }
+  .floating-date-badge.visible { opacity: 1; }
+
+  /* Respect the OS "reduce motion" setting — keep everything instant.
+     IMPORTANT: this rule kills ABSOLUTELY every animation, including state
+     indicators. On Windows 11 "Animation effects" are often turned off, and
+     Chrome/Edge report reduce — because of which the typing indicator appeared and
+     froze on its first frame, and the spinner stopped spinning. It looked broken.
+
+     "Reduce motion" means removing SUPERFLUOUS movement (parallax, large shifts),
+     not feedback: for an indicator the movement IS the message. So below are
+     targeted exceptions with a gentler animation and no displacement. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important;
+    }
+    /* The typing indicator: a calm blink instead of bouncing. */
+    .typing-dots span {
+      animation-name: typingDotReduced !important;
+      animation-duration: 1.6s !important;
+      animation-iteration-count: infinite !important;
+    }
+    /* The spinner: its whole point is that it spins. We slow it down, we do not stop it. */
+    .spinner, .skel-ava, .skel-line {
+      animation-duration: 1.8s !important;
+      animation-iteration-count: infinite !important;
+    }
+  }
+  /* A separate name rather than an override of typingDot: this way it is visible
+     that it is a deliberate variant that must not be lost when editing the main one. */
+  @keyframes typingDotReduced {
+    0%, 100% { opacity: .25; }
+    50%      { opacity: 1; }
+  }
+
+.msg-longtext { white-space: pre-wrap; word-break: break-word; }
+.msg-expand {
+  display: block; margin-top: 6px; font-size: 12px; cursor: pointer;
+  background: none; border: none; color: var(--accent); padding: 0;
+}
+
+/* ── Search ─────────────────────────────────────── */
+.search-wrap { padding: 0 12px 8px; }
+.search-wrap .new-chat-input { width: 100%; }
+.search-status {
+  padding: 14px 16px; text-align: center;
+  color: var(--muted); font-size: 13px; cursor: pointer;
+}
+/* Highlighting a match. It was background:rgba(0,49,83,.8) with color:inherit —
+   in the light theme that gave muted warm text on dark blue, a contrast of 1.11.
+   The fill and the colour are now split into tokens: in the dark theme a saturated
+   ground with light text, in the light one a pale ground with ordinary text. */
+.search-hit .contact-preview mark {
+  background: var(--mark-bg); color: var(--mark-fg); border-radius: 2px;
+}
+.search-date {
+  float: right; font-size: var(--fs-xs); font-weight: 400;
+  color: var(--muted);
+}
+
+/* ── Groups ─────────────────────────────────────── */
+.av-g { background: linear-gradient(135deg, #2b4d7a, #003153); }
+.av-g-t { color: #7aa7d6; }
+.msg-sender {
+  font-size: 12px; font-weight: 600; margin: 0 0 3px;
+  color: #7aa7d6;
+}
+/* The content layout of the group and 2FA windows. The surface, width, padding
+   and height are shared by all dialogs, see "═══ Dialogs ═══" further down the
+   file. What remains here is only what is specific to these windows: a column with
+   an even gap between blocks instead of manual margins on each. */
+.group-box { display: flex; flex-direction: column; gap: 12px; }
+.gp-header { display: flex; align-items: center; justify-content: space-between; }
+.gp-title { font-size: var(--fs-lg); font-weight: 600; }
+.gp-close {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: var(--fs-lg); padding: 4px 8px;
+}
+.gp-close:hover { color: var(--text); }
+.gp-sub { font-size: 12px; color: var(--muted); }
+/* Editing the group name and purpose right in the panel. The input deliberately
+   has no border at rest: the panel must not look like a form until editing starts. */
+.gp-name-input {
+  flex: 1; min-width: 0; font-size: var(--fs-lg); font-weight: 600;
+  color: var(--text); background: none; border: 1px solid transparent;
+  border-radius: var(--radius-xs); padding: 4px 6px; margin: -4px -6px;
+  font-family: inherit;
+}
+.gp-name-input:hover { border-color: var(--border); }
+.gp-name-input:focus { outline: none; border-color: var(--accent); background: var(--bg3); }
+.gp-descr { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 2px; }
+.gp-descr-input {
+  width: 100%; font-size: 12px; color: var(--text); line-height: 1.5;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--radius-xs); padding: 6px 8px; margin-top: 2px;
+  font-family: inherit; resize: vertical;
+}
+.gp-descr-input:focus { outline: none; border-color: var(--accent); }
+.gp-save-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.gp-hint { flex: 1; font-size: 11px; color: var(--muted); min-height: 14px; }
+.gp-hint.ok  { color: var(--online, #2ec27e); }
+.gp-hint.err { color: var(--danger, #e05252); }
+.gp-save {
+  font-size: 12px; padding: 5px 14px; border-radius: var(--radius-xs);
+  background: var(--accent); color: #fff; border: none; cursor: pointer;
+}
+.gp-save:hover { filter: brightness(1.15); }
+/* Dissolving a group — separate from "leave" and plainly more dangerous: it is
+   an action for everyone, not only for yourself. */
+.gp-danger-btn { color: var(--danger, #e05252); border-color: transparent; }
+.gp-members { display: flex; flex-direction: column; gap: 4px; }
+.gp-member {
+  display: flex; align-items: center; gap: 10px; padding: 6px 4px;
+  border-radius: var(--radius-sm);
+}
+.gp-member:hover { background: var(--bg3); }
+.gp-member-name { flex: 1; font-size: var(--fs-md); }
+.gp-role { font-size: var(--fs-xs); color: var(--green); margin-left: 4px; }
+.gp-actions { display: flex; gap: 6px; }
+.gp-act {
+  background: var(--bg4); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--radius-xs); font-size: var(--fs-xs); padding: 4px 8px;
+}
+.gp-act:hover { background: var(--bg3); }
+.gp-danger { color: var(--danger-soft); }
+.gp-add { display: flex; gap: 6px; }
+.gp-add .new-chat-input { flex: 1; }
+.gp-leave {
+  background: none; border: 1px solid var(--danger-border); color: var(--danger-soft);
+  border-radius: var(--radius-sm); padding: 8px; font-size: 13px;
+}
+.gp-leave:hover { background: var(--danger-bg); }
+
+/* ── Unread badge ──────────────────────────────── */
+.unread-badge {
+  background: var(--forest); color: #cfe9db; font-size: var(--fs-xs); font-weight: 700;
+  min-width: 20px; height: 20px; line-height: 20px; text-align: center;
+  border-radius: 10px; padding: 0 5px; margin-left: auto; flex-shrink: 0;
+}
+
+/* ── Visual polish ─────────────────────────────── */
+
+/* Touch scrolling for iOS */
+.messages-wrap {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Contacts: a bold preview for unread */
+.contact-item.has-unread .contact-preview { color: var(--text); font-weight: 500; }
+.contact-item.has-unread .contact-name { font-weight: 700; }
+
+/* Contacts: active feedback */
+.contact-item { transition: background .12s, transform .08s; position: relative; }
+.contact-item:active { transform: scale(0.98); }
+
+/* ── Pin ── */
+/* ── The right-hand column of a contact row ───────────────────────────
+   The time on top, the unread counter below. The right edge of the row used to be
+   taken by a lone 8-pixel presence dot while all the other space stood empty: the
+   list looked unfinished, and it had no answer at all to "when was this".
+
+   The width is fixed — otherwise rows with "Yesterday" and with "10:24" would
+   give the name different lengths, and the left edge of the preview would wander
+   down the list. */
+.contact-meta {
+  position: relative;
+  flex-shrink: 0;
+  width: 46px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px;
+}
+.contact-time {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition: opacity .12s ease;
+}
+.contact-item.has-unread .contact-time { color: var(--text); }
+/* The pin button lives IN THE SAME SLOT as the time and replaces it on hover.
+   It no longer has a place of its own: it took up 26 pixels on every row for an
+   action performed once a month.
+   The slot is one and the same size, so the layout does not twitch on hover, and
+   the button does not overlap the counter below — that is in another row of the
+   column. */
+.contact-pin {
+  position: absolute;
+  top: -3px; right: -4px;
+  width: 26px; height: 26px; padding: 0; border: none; background: transparent;
+  color: var(--muted); cursor: pointer; opacity: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; transition: opacity .12s, background .12s, color .12s;
+}
+.contact-pin svg { width: 15px; height: 15px; }
+.contact-item:hover .contact-pin { opacity: 1; }
+.contact-item:hover .contact-time { opacity: 0; }
+.contact-pin:hover { background: rgba(255,255,255,.07); color: var(--text); }
+/* The "pinned" indicator is deliberate: a filled accent icon plus a bolder name. */
+.name-pin { display: inline-flex; vertical-align: -2px; margin-right: 5px; color: #fff; }
+.name-pin svg { width: 14px; height: 14px; fill: currentColor; stroke: currentColor; }
+.contact-item.pinned .contact-name { font-weight: 600; }
+/* Touch devices without hover — the button is shown muted so pinning is possible. */
+/* On a touch screen hover does not exist: the pin button stayed visible always
+   (opacity .5) while the time was hidden only on :hover — that is, never. Both
+   lived in the same slot and overlapped each other.
+
+   Here we remove the button entirely rather than move it: pinning on a phone is
+   done by a long press on the row anyway (the context menu, showChatMenu), so
+   nothing is lost. A separate 26 px button is no good for a finger regardless,
+   and it took space from the time — which is always visible. */
+@media (hover: none) {
+  .contact-pin { display: none; }
+  .contact-item:hover .contact-time { opacity: 1; }
+}
+
+/* ── A muted conversation ──
+   A badge next to the name and a muted counter. The counter is muted rather than
+   removed: the unread messages in a muted chat have not gone anywhere, they are
+   simply not announced out loud — and that must be visible at a glance. */
+.name-mute { display: inline-flex; vertical-align: -2px; margin-left: 5px; color: var(--muted); }
+.name-mute svg { width: 13px; height: 13px; }
+.contact-item.muted .contact-name { color: var(--muted); }
+.unread-badge.muted { background: var(--bg4); color: var(--muted); }
+
+/* ── Archive ──
+   A separate entry row above the list. It looks like a contact (the same height
+   and padding, so the list is not torn), but muted: it is a utility item, not a
+   conversation. */
+.archive-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; margin-bottom: 2px;
+  border-radius: var(--radius-sm); cursor: pointer;
+  color: var(--muted); font-size: 13px;
+  transition: background .12s, color .12s;
+}
+.archive-row:hover { background: var(--bg3); color: var(--text); }
+.archive-row.open { background: var(--bg3); color: var(--text); }
+.arc-ico { width: 18px; height: 18px; flex-shrink: 0; }
+.arc-label { font-weight: 600; }
+.arc-count { color: var(--muted); font-variant-numeric: tabular-nums; }
+/* The expansion chevron — on the right, rotating with the section. */
+.archive-row::after {
+  content: ''; margin-left: auto; width: 6px; height: 6px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg); transition: transform .15s;
+}
+.archive-row.open::after { transform: rotate(45deg); }
+.archive-row .unread-badge { margin-left: 8px; }
+/* An expanded archive: the conversations themselves are slightly recessed so
+   they differ from the active list and do not merge with it once the section is
+   collapsed. */
+.contact-item.archived { opacity: .72; }
+.contact-item.archived:hover { opacity: 1; }
+
+/* ── Viewing a peer profile ── */
+.pf-view-head { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pf-view-name { font-size: 16px; font-weight: 600; color: var(--text); }
+.pf-view-pos { font-size: 13px; color: var(--sub, var(--muted)); }
+.pf-view-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); font-size: 13.5px; }
+.pf-view-label { color: var(--muted); min-width: 56px; }
+/* It was color:#fff — in the light theme the email and phone links turned white
+   on a light card, that is, simply vanished. The accent and the underline also
+   make them recognisable as links in both themes. */
+.pf-view-row a { color: var(--accent-link, var(--accent2)); text-decoration: none; word-break: break-all; }
+.pf-view-row a:hover { text-decoration: underline; }
+
+/* ── Forward picker ── */
+.fwd-typebar { display: flex; gap: 8px; margin: 4px 0 12px; }
+.fwd-typebar input {
+  flex: 1; padding: 9px 12px; border-radius: var(--radius-sm);
+  background: var(--bg3); border: 1px solid var(--border); color: var(--text); font-size: 13px;
+}
+.fwd-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.fwd-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border-radius: var(--radius-sm); cursor: pointer; transition: background .12s;
+}
+.fwd-item:hover { background: var(--bg4); }
+.fwd-item span { font-size: 13.5px; color: var(--text); }
+.fwd-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 16px 0; }
+
+/* Buttons: feedback on press */
+.new-chat-btn, .send-btn, .attach-btn, .auth-btn {
+  transition: background .12s, transform .08s;
+}
+.new-chat-btn:active, .send-btn:active, .attach-btn:active {
+  transform: scale(0.92);
+}
+
+/* Photo placeholder before loading (a grey ground instead of a jump) */
+.msg-image, .msg-video {
+  background: transparent;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, .07); /* a thin neat border instead of the bubble's thick "ground" */
+}
+/* Media bubbles: almost no inner frame — the image/video fills the bubble. */
+.msg-bubble:has(.media-wrap) { padding: 4px; }
+.msg-bubble:has(.media-wrap) .msg-time { padding: 0 6px 2px; }
+
+/* Bubbles: a soft shadow for depth */
+.msg-bubble { 
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+  transition: box-shadow .15s;
+}
+
+/* Scrollbar: hidden on mobile, stable on desktop */
+@media (max-width: 600px) {
+  .messages-wrap::-webkit-scrollbar { display: none; }
+  .messages-wrap { scrollbar-width: none; }
+}
+@media (min-width: 601px) {
+  .messages-wrap { scrollbar-gutter: stable; }
+}
+
+/* The mobile sidebar↔chat transition: a smooth slide */
+@media (max-width: 600px) {
+  .sidebar, .chat-area {
+    transition: transform .2s ease-out, opacity .2s ease-out;
+    will-change: transform, opacity;
+  }
+}
+
+/* Input: focus highlight */
+.msg-textarea:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px rgba(0,49,83,.3);
+}
+
+/* Avatars: a light glow */
+.contact-avatar, .chat-header-avatar {
+  box-shadow: 0 0 0 2px var(--bg2);
+  transition: box-shadow .15s;
+}
+
+/* ── Call quality & volume indicator ──── */
+.call-quality { display:flex; align-items:center; gap:6px; margin-top:4px; font-size:12px; }
+.volume-indicator { width:80px; height:4px; background:rgba(255,255,255,.2); border-radius:2px; margin-top:6px; overflow:hidden; }
+.vol-bar { height:100%; background:var(--green); border-radius:2px; width:0%; transition:width .08s; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Design polish v2 — Linear/Notion-grade refinement.
+   Palette & structure unchanged: only spacing, hierarchy, states, motion.
+   Desktop-scoped so the mobile @media blocks above stay authoritative.
+   ═════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 601px) {
+  /* — Sidebar shell — */
+  .sidebar { width: 288px; }
+  .sidebar-header { padding: 16px 16px 12px; }
+  .sidebar-logo {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(140deg, #0a3a63, var(--accent));
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+  }
+  .sidebar-appname { font-size: 15px; font-weight: 650; letter-spacing: -.2px; }
+  .sidebar-me { padding: 8px 16px 10px; }
+
+  /* — Unified fields (new-chat + search) — */
+  .new-chat-wrap { padding: 8px 12px; border-bottom: none; gap: 8px; }
+  .new-chat-input {
+    height: 38px; border-radius: 10px; padding: 0 12px; font-size: 13px;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+  }
+  .new-chat-input:focus { background: var(--bg); }
+  .new-chat-btn { width: 38px; height: 38px; border-radius: 10px; }
+
+  .search-wrap { padding: 0 12px 10px; position: relative; }
+  .search-wrap .new-chat-input { height: 38px; padding-right: 50px; }
+  .search-kbd {
+    position: absolute; right: 21px; top: 4px; height: 30px;
+    display: inline-flex; align-items: center; gap: 1px;
+    font-size: var(--fs-xs); font-weight: 500; color: var(--muted);
+    padding: 0 7px; border: 1px solid var(--border); border-radius: var(--radius-xs);
+    background: var(--bg2); pointer-events: none; user-select: none;
+  }
+  .search-wrap:focus-within .search-kbd { opacity: 0; }
+
+  /* — Chat list: air + Linear-style cards — */
+  .contacts-list { padding: 4px 8px; }
+  .contact-item {
+    border-bottom: none; border-radius: 10px; padding: 9px 10px; gap: 11px;
+    margin-bottom: 2px; position: relative;
+    transition: background .14s ease, transform .12s ease;
+  }
+  .contact-item:hover { background: var(--bg3); transform: translateY(-1px); }
+  .contact-item.active { background: var(--bg4); transform: none; }
+  .contact-item.active::before {
+    content: ''; position: absolute; left: 1px; top: 50%; transform: translateY(-50%);
+    width: 3px; height: 22px; border-radius: 3px; background: var(--forest);
+  }
+  .contact-avatar { width: 42px; height: 42px; font-size: var(--fs-md); }
+  .contact-name { font-size: var(--fs-md); font-weight: 600; }
+  .contact-preview { font-size: var(--fs-sm); margin-top: 2px; display: flex; align-items: center; gap: 5px; }
+  .contact-preview .att-ico { width: 13px; height: 13px; flex-shrink: 0; stroke: var(--muted); fill: none; stroke-width: 2; }
+
+  /* — Header: Encrypted becomes a quiet status, not a button — */
+  .chat-header { padding: 12px 20px; }
+  .e2e-badge {
+    background: transparent; border: none; padding: 4px 6px; color: var(--muted);
+    gap: 6px; border-radius: var(--radius-sm);
+  }
+  .e2e-badge:hover { background: var(--bg3); color: var(--green); }
+  .e2e-badge svg { stroke: var(--green); }
+
+  /* — Feed rhythm & bubbles — */
+  .messages-wrap { padding: 14px 22px; }
+  .msg-row { margin-top: 2px; }
+  .msg-bubble { padding: 8px 12px; border-radius: var(--radius-lg); line-height: 1.5; }
+  .msg-row.in  .msg-bubble { border-bottom-left-radius: 5px; }
+  .msg-row.out .msg-bubble { border-bottom-right-radius: 5px; }
+  .msg-time { font-size: 10.5px; margin-top: 2px; }
+
+  /* The mobile composer is described in a separate block at the end of the file —
+     it must come AFTER the glass rules, otherwise those override it (equal
+     specificity, order decides). */
+}
+
+/* — Reactions: more compact (all widths) — */
+.reaction-chip { padding: 1px 7px; font-size: 12px; border-radius: 20px; gap: 3px; }
+.reaction-chip:hover { transform: translateY(-1px); }
+
+/* — Attach "+" composer menu (all widths) — */
+.attach-wrap { position: relative; flex-shrink: 0; display: flex; }
+.attach-btn.open { background: var(--bg4); }
+.attach-btn.open svg { stroke: var(--text); }
+.attach-menu {
+  position: absolute; bottom: 50px; left: 0; min-width: 184px;
+  background: rgba(30,31,40,.8); -webkit-backdrop-filter: blur(22px) saturate(1.5); backdrop-filter: blur(22px) saturate(1.5);
+  border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius-md);
+  padding: 6px; display: none; flex-direction: column; gap: 2px; z-index: var(--z-dropdown);
+  box-shadow: 0 10px 30px -12px rgba(0,0,0,.6);
+}
+.attach-menu.open { display: flex; animation: attachIn .13s ease; }
+@keyframes attachIn { from { opacity: 0; transform: translateY(5px) scale(.98); } to { opacity: 1; transform: none; } }
+.attach-item {
+  display: flex; align-items: center; gap: 11px; width: 100%;
+  padding: 9px 10px; border: none; border-radius: var(--radius-sm); background: none;
+  color: var(--text); font-family: var(--font); font-size: 13px; text-align: left;
+  cursor: pointer; transition: background .12s ease;
+}
+.attach-item:hover { background: var(--bg4); }
+.attach-item svg { width: 17px; height: 17px; stroke: var(--muted); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+/* — Composer drag & drop hint — */
+.input-area.dragover .msg-textarea { border-color: var(--accent); background: var(--accent2); }
+
+/* — Mobile fixes for the polish layer —
+   These must apply at ALL widths / on mobile, where the desktop-scoped
+   block above does not reach. */
+.contact-preview { display: flex; align-items: center; gap: 5px; }
+.contact-preview .att-ico {
+  width: 13px; height: 13px; flex-shrink: 0;
+  stroke: var(--muted); fill: none; stroke-width: 2;
+}
+@media (max-width: 600px) {
+  /* ⌘K/Ctrl K hint is desktop-only — no physical keyboard shortcut on phones. */
+  .search-kbd { display: none !important; }
+}
+
+/* ═══════════════ New-message motion + empty states ═══════════════ */
+
+
+/* New-message appear — added only to the last row when a genuinely new
+   message arrives (see renderMessages), so the feed never re-flashes. */
+@keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.msg-row.msg-in { animation: msgIn .16s ease both; }
+
+/* Empty contact list */
+.contacts-empty {
+  padding: 40px 24px; text-align: center; color: var(--text);
+  font-size: var(--fs-md); font-weight: 500; line-height: 1.5;
+}
+.contacts-empty span { display: block; margin-top: 6px; font-size: var(--fs-sm); font-weight: 400; color: var(--muted); }
+
+/* ═══════════════ UX polish: toasts, skeletons, empty states, hierarchy ═══════════════ */
+/* Toasts (non-blocking, replace alert) */
+#toast-host {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  z-index: var(--z-toast); display: flex; flex-direction: column; gap: 8px; align-items: center;
+  pointer-events: none; width: max-content; max-width: min(92vw, 420px);
+}
+.toast {
+  pointer-events: auto; padding: 11px 15px; border-radius: 11px;
+  font-size: 13.5px; line-height: 1.4; color: var(--text);
+  background: var(--bg4); border: 1px solid var(--border);
+  box-shadow: 0 10px 30px -12px rgba(0,0,0,.6);
+  opacity: 0; transform: translateY(8px); transition: opacity .18s ease, transform .18s ease;
+  max-width: 100%;
+}
+.toast.in { opacity: 1; transform: none; }
+.toast-error   { border-left: 3px solid var(--danger); }
+.toast-success { border-left: 3px solid var(--green); }
+.toast-info    { border-left: 3px solid var(--accent); }
+
+/* Message time hierarchy: dim own-message meta a touch more, tighten day chip */
+.msg-row.out .msg-time { opacity: .7; }
+.msg-day {
+  display: inline-block; align-self: center;
+  padding: 2px 10px; border-radius: 20px;
+  background: rgba(255,255,255,.03); color: var(--muted);
+  font-size: var(--fs-xs); font-weight: 500;
+}
+
+/* Empty states */
+.contacts-empty, .chat-empty { color: var(--text); }
+.contacts-empty .ce-ico, .chat-empty svg { color: var(--muted); }
+.contacts-empty .ce-ico {
+  width: 34px; height: 34px; margin: 0 auto 12px; display: block;
+  stroke: var(--muted); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+  opacity: .7;
+}
+
+/* Sidebar skeleton (first load, before contacts render) */
+.skel-item { display: flex; align-items: center; gap: 11px; padding: 9px 10px; }
+.skel-ava { width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0; }
+.skel-lines { flex: 1; display: flex; flex-direction: column; gap: 7px; }
+.skel-line { height: 9px; border-radius: 5px; }
+.skel-line.short { width: 45%; }
+.skel-ava, .skel-line {
+  background: linear-gradient(100deg, var(--bg3) 30%, var(--bg4) 50%, var(--bg3) 70%);
+  background-size: 200% 100%; animation: skelShimmer 1.3s ease-in-out infinite;
+}
+@keyframes skelShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skel-ava, .skel-line { animation: none; } }
+
+/* ═══════════════ Groups distinguishable + group online ═══════════════ */
+/* Group avatars use a rounded square; individuals stay round. */
+.contact-avatar.is-group, .chat-header-avatar.is-group { border-radius: 13px; }
+.ct-avatar-wrap { position: relative; flex-shrink: 0; }
+.ct-group-badge {
+  position: absolute; right: -3px; bottom: -3px;
+  width: 17px; height: 17px; border-radius: 50%;
+  background: var(--bg2); border: 2px solid var(--bg2);
+  display: flex; align-items: center; justify-content: center;
+}
+.contact-item.active .ct-group-badge { background: var(--bg4); border-color: var(--bg4); }
+.ct-group-badge svg { width: 11px; height: 11px; stroke: var(--muted); fill: none; stroke-width: 2.2; }
+/* "N online" for groups in the list. */
+.group-online { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; font-size: var(--fs-xs); font-weight: 600; color: var(--online); }
+.group-online .go-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--online); box-shadow: 0 0 0 3px rgba(52,200,138,.18); }
+.group-online.none { color: var(--muted); }
+.group-online.none .go-dot { background: var(--muted); box-shadow: none; }
+
+/* ═══════════════ Typographic system (3 fonts) ═══════════════
+   Body: Inter (sans). Headings: IBM Plex Serif. Names & avatar initials: Bitter. */
+.contact-avatar, .chat-header-avatar,
+.contact-name, .chat-header-name,
+.sidebar-appname, .msg-sender,
+.gp-name, .gp-title, .call-name, .call-bar-name {
+  font-family: var(--font-name);
+}
+.chat-empty-title, .e2e-popup-title, .contacts-empty {
+  font-family: var(--font-head);
+  letter-spacing: -.2px;
+}
+.contacts-empty span { font-family: var(--font); }
+
+/* ═══════════════ Group manage affordance, density, reactions, modals ═══════════════ */
+/* Only this pill (with its people glyph) opens group management. */
+.gp-manage {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-left: 2px; padding: 2px 8px; border-radius: 20px;
+  color: var(--muted); cursor: pointer; user-select: none;
+  transition: background .12s ease, color .12s ease;
+}
+.gp-manage:hover { background: var(--bg3); color: var(--text); }
+.gp-manage svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+/* Density (desktop): readability-only type bumps. Deliberately NO layout
+   changes (widths, paddings, centering) so it can't break the flex layout. */
+@media (min-width: 601px) {
+  .contact-name { font-size: 14.5px; }
+  .contact-preview { font-size: 13px; }
+  .chat-header-name { font-size: 15.5px; }
+  .msg-bubble { font-size: 14.5px; }
+}
+
+/* Reactions: pop the chip in gently instead of the bubble snapping wider. */
+@keyframes reactionPop { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
+.reaction-chip { animation: reactionPop .17s cubic-bezier(.2,.9,.3,1.2) both; }
+.reactions-bar { animation: fadeUp .18s ease both; }
+@media (prefers-reduced-motion: reduce) { .reaction-chip, .reactions-bar { animation: none !important; } }
+
+/* ═══ Conversation attachments panel ══════════════════════════════════════
+   It takes the place of the feed inside the same conversation: the header with the
+   peer's name stays on screen, so it is clear whose files these are. */
+/* The header and the composer FLOAT over the conversation content
+   (position:absolute), and the feed compensates for them with the live
+   --feed-pad-* variables that initFeedInsets sets via a ResizeObserver. The panel
+   is a sibling of the feed in the same container, so it must compensate the same
+   way: without that the tabs slid under the header and could not be hit — the
+   peer's name intercepted the press. Caught by a test rather than by eye: visually
+   the panel looked fine, because the header is translucent. */
+.attach-panel {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  padding-top: var(--feed-pad-top, 0px);
+  padding-bottom: var(--feed-pad-bottom, 0px);
+}
+.attach-panel[hidden] { display: none; }
+.ap-tabs {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.ap-tab {
+  padding: 6px 12px; border-radius: var(--radius-pill); border: 1px solid transparent;
+  background: transparent; color: var(--muted); font-family: var(--font);
+  font-size: var(--fs-sm); font-weight: 500; cursor: pointer; transition: all .14s ease;
+}
+.ap-tab:hover { color: var(--text); background: var(--bg3); }
+.ap-tab.active { background: var(--accent); color: #fff; }
+/* The filter field is pushed to the right and labelled honestly: it sifts what is
+   already loaded, it does not search the whole history (file names are encrypted). */
+.ap-filter {
+  margin-left: auto; max-width: 190px; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 6px 10px; color: var(--text); font-family: var(--font);
+  font-size: var(--fs-sm); outline: none;
+}
+.ap-filter:focus { border-color: var(--accent); }
+.ap-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; }
+
+.ap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.ap-cell {
+  position: relative; aspect-ratio: 1; padding: 0; border: none; cursor: pointer;
+  border-radius: var(--radius-sm); overflow: hidden; background: var(--bg3);
+}
+/* Media is hidden until it loads: before that the browser draws an empty frame
+   with a "no image" icon, and when the panel opens that is visible as a flash of
+   empty icons. The tile background acts as the placeholder, and the class is set
+   on the load event (see _apFadeInMedia). */
+.ap-cell img, .ap-cell video {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  opacity: 0; transition: opacity .18s ease;
+}
+.ap-cell img.ap-ready, .ap-cell video.ap-ready { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .ap-cell img, .ap-cell video { transition: none; }
+}
+/* A broken file leaves no hole in the grid — the tile stays with its caption. */
+.ap-cell.ap-broken { background: var(--bg4); }
+/* The file name on a tile: a grid of nameless squares forces you to open them one
+   by one to see what is where. The caption sits over the bottom edge so it does
+   not take height from the image itself. */
+.ap-cap {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 6px 4px;
+  font-size: 11px; line-height: 1.25; color: #fff; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,0));
+  pointer-events: none;
+}
+.ap-cell:hover img, .ap-cell:hover video { filter: brightness(1.08); }
+.ap-play {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 22px; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.6);
+  background: rgba(0,0,0,.18); pointer-events: none;
+}
+/* The tile skeleton is the same shape and size, so substituting the data does not
+   shift the panel content. */
+.ap-sk {
+  aspect-ratio: 1; border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--bg3) 25%, var(--bg4) 50%, var(--bg3) 75%);
+  background-size: 200% 100%; animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .ap-sk { animation: none; background: var(--bg3); } }
+
+.ap-list { display: flex; flex-direction: column; gap: 4px; }
+.ap-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 9px 10px; border: none; background: transparent; cursor: pointer;
+  border-radius: var(--radius-sm); color: var(--text); font-family: var(--font);
+}
+.ap-row:hover { background: var(--bg3); }
+.ap-ico {
+  width: 38px; height: 38px; flex-shrink: 0; border-radius: var(--radius-sm);
+  background: var(--bg4); color: var(--muted); display: flex;
+  align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+}
+.ap-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ap-fname { font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ap-sub { font-size: var(--fs-sm); color: var(--muted); }
+.ap-empty { padding: 40px 16px; text-align: center; color: var(--muted); font-size: 13.5px; line-height: 1.6; }
+.ap-empty span { font-size: var(--fs-sm); }
+.ap-more {
+  display: block; margin: 14px auto 4px; padding: 8px 18px;
+  border-radius: var(--radius-pill); border: 1px solid var(--border);
+  background: transparent; color: var(--muted); font-family: var(--font);
+  font-size: var(--fs-sm); cursor: pointer;
+}
+.ap-more:hover { color: var(--text); background: var(--bg3); }
+.chat-hdr-btn.active { color: var(--accent-link); }
+
+/* The chat list skeleton. The rows repeat the geometry of the real ones (a 44px
+   avatar, two lines of text), so the list does not jump when the data is
+   substituted — that is what a skeleton is for, not the beauty of waiting.
+   The shimmer respects the system "reduce motion" setting: for some people a
+   pulsation is not decoration but a reason to close the tab. */
+.contacts-skeleton { padding: 4px 0; }
+.sk-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.sk-av { width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0; }
+.sk-lines { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.sk-line { height: 10px; border-radius: var(--radius-xs); }
+.sk-w60 { width: 60%; }
+.sk-w85 { width: 85%; }
+.sk-av, .sk-line {
+  background: linear-gradient(90deg, var(--bg3) 25%, var(--bg4) 50%, var(--bg3) 75%);
+  background-size: 200% 100%;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes sk-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .sk-av, .sk-line { animation: none; background: var(--bg3); }
+}
+
+/* For screen readers only: the element is taken off the screen but stays in the
+   accessibility tree. display:none and visibility:hidden do not work here — they
+   hide the element from the screen reader too, and then the live region is silent.
+   clip-path instead of the old clip: rect() — the latter is deprecated. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px;
+  padding: 0; border: 0; overflow: hidden; white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+/* ═══ Dialogs ═══════════════════════════════════════════════════════════════
+   One surface for every window in the app.
+
+   There used to be two of them, mutually incompatible. .hex-modal was glassy,
+   360px, with an appearance animation; .group-box (groups, 2FA) was flat, 420px,
+   without animation, pressed to the screen edges on a phone. Plus .profile-modal
+   with a third width of 340px. Three widths and two kinds of window in one
+   application read as sloppiness, even to someone who cannot name the reason.
+
+   Separately: .hex-modal set the background as the LITERAL rgba(22,23,29,.72),
+   bypassing the --glass-* tokens. In the light theme that gave a dark slab with
+   dark text — a measured contrast of 1.06 against the WCAG AA requirement of 4.5,
+   that is, the text was physically unreadable. It affected six windows: confirm,
+   prompt, own profile, another person's profile, forwarding and the network test.
+   The comment in web/js/theme.js warns about exactly this: a theme changes only
+   token values, and a literal colour stays dark forever.
+   ═════════════════════════════════════════════════════════════════════════ */
+.hex-modal-overlay, .group-overlay {
+  position: fixed; inset: 0; z-index: var(--z-modal);
+  align-items: center; justify-content: center; padding: 20px;
+  background: var(--scrim);
+  /* Scrolling behind the window must not drag the chat list underneath it. */
+  overscroll-behavior: contain;
+}
+.hex-modal-overlay { display: none; }
+.hex-modal-overlay.open { display: flex; }
+/* .group-overlay is shown by an inline display from JS — only the layout and
+   appearance live here, showing it stays with the JS. */
+.group-overlay { display: flex; }
+
+/* Multi-step windows are pinned to the top rather than centred.
+   When centred, the window moves around the screen on every step: the 2FA step
+   heights are 483 → 543 → 356 → 235, and the title wandered by 154px — measured.
+   A pinned top makes the window a fixed frame: only the content changes, only the
+   bottom grows. */
+.hex-modal-overlay.dlg-anchored, .group-overlay.dlg-anchored {
+  align-items: flex-start;
+  padding-top: clamp(24px, 12vh, 120px);
+}
+
+.hex-modal, .group-box {
+  width: 100%; max-width: var(--dlg-w, 380px);
+  /* The height is bounded by the overlay frame (100% of its content-box, that is,
+     the screen minus the padding) — otherwise on a phone in landscape and on short
+     screens the window ran off the edge with no way to scroll. */
+  max-height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-line); border-radius: var(--radius-lg); padding: 22px;
+  box-shadow: var(--shadow-lg);
+  animation: fadeUp .16s ease both;
+}
+.hex-modal-title { font-family: var(--font-head); font-size: var(--fs-lg); font-weight: 600; margin-bottom: 8px; }
+/* pre-line: the window text is substituted through textContent — no markup from
+   the calling code, and that is deliberate. The only remaining way to break a long
+   warning into paragraphs is a line break; without this rule it collapsed into a
+   space, and a warning made of two thoughts read as one wall of text. On
+   single-line messages the rule changes nothing. */
+.hex-modal-msg { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin-bottom: 16px; white-space: pre-line; }
+
+/* ── Window contents: a shared set instead of inline styles ────────────────
+   The 2FA steps used to be assembled as strings with font-size/color/margin right
+   in the markup. Because of that each step had its own rhythm of spacing (8, 12,
+   14 mixed with flex-gap) and the colours were literals bypassing the tokens.
+   Here there is one set for all the windows: the vertical rhythm is set by the
+   container's gap rather than by a margin on each block. None of these classes
+   sets vertical margins of its own — which is exactly why the steps look
+   consistently aligned. */
+.dlg-text  { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+.dlg-text b { color: var(--text); }
+.dlg-ok    { font-size: var(--fs-md); font-weight: 600; color: var(--online); }
+.dlg-warn  { font-size: 13.5px; color: #d99a2b; line-height: 1.5; }
+.dlg-note  { font-size: var(--fs-sm); color: var(--muted); text-align: center; line-height: 1.5; }
+/* The secret and the recovery codes are monospaced and framed: they are copied
+   out by hand, and a run-together 32-character string with nothing to hold on to
+   is read with mistakes. */
+.dlg-code {
+  display: block; margin-top: 4px; padding: 8px 10px;
+  background: var(--code-bg); border-radius: var(--radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px; letter-spacing: 1px; color: var(--code-text);
+  word-break: break-all; text-align: center;
+}
+.dlg-codes {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 12px;
+  background: var(--code-bg); border-radius: var(--radius-sm); padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px; letter-spacing: 1px; color: var(--code-text);
+}
+.dlg-codes > div { text-align: center; }
+/* QR: the size is fixed before the image loads, otherwise the window twitches
+   when it appears. The white ground is mandatory — scanners do not read an
+   inverted code, and in the dark theme it would be white on dark. */
+.dlg-qr {
+  width: 200px; height: 200px; display: block; margin: 2px auto;
+  background: #fff; border-radius: var(--radius-sm); padding: 8px;
+}
+.dlg-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+/* A secondary action next to the main one ("Done" after "Copy codes"):
+   the same shape and height, a muted background. This used to be done with an
+   inline background right in the markup. */
+.auth-btn.secondary { background: var(--bg3); color: var(--text); }
+.auth-btn.secondary:hover { background: var(--bg4); }
+
+/* Buttons and fields inside windows obey the window's rhythm rather than the
+   margins of the screens the classes came from: .auth-btn carries margin-top:8px
+   from the sign-in form (in a column with a gap that doubled into 16), and
+   .new-chat-input carries flex:1 from the search row, which stretched the field
+   vertically in a window column. The field size is pulled in line with the other
+   windows too: 13px/7px from the search row looked smaller than the neighbouring
+   buttons. */
+.group-box .auth-btn { margin-top: 0; }
+.group-box .new-chat-input {
+  flex: 0 0 auto; width: 100%;
+  padding: 10px 12px; font-size: var(--fs-md);
+}
+.hex-modal input {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px; color: var(--text);
+  font-family: var(--font); font-size: var(--fs-md); outline: none; margin-bottom: 16px;
+}
+.hex-modal input:focus { border-color: var(--accent); }
+.hex-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.hex-btn {
+  padding: 8px 16px; border-radius: 9px;
+  font-size: 13px; font-weight: 500; border: 1px solid var(--border);
+  background: transparent; color: var(--muted); transition: all .14s ease;
+}
+.hex-btn:hover { color: var(--text); background: var(--bg3); }
+.hex-btn.primary { background: var(--accent); color: #fff; border-color: transparent; }
+.hex-btn.primary:hover { background: var(--accent2); color: #fff; }
+.hex-btn.danger { background: #b5352d; color: #fff; border-color: transparent; }
+.hex-btn.danger:hover { background: #c8403a; }
+
+/* Sidebar wordmark uses the landing heading serif (IBM Plex Serif), not Bitter. */
+.sidebar-appname { font-family: var(--font-head); font-weight: 600; letter-spacing: -.2px; }
+
+/* ── User profiles (Stage 1): avatars, presence, profile editor ──────────── */
+
+/* Uploaded avatar image fills the letter-circle it replaces. */
+/* touch-callout: none — on a long press on a phone the browser no longer opens
+   the system image menu with its address and caption. pointer-events: none — a
+   long press and the right button land on the parent circle rather than on the
+   <img>, so on desktop web there is no image context menu either. A click on the
+   avatar still works: the handler sits on the parent anyway. */
+.av-img {
+  width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  user-select: none; -webkit-user-select: none;
+  pointer-events: none;
+}
+.contact-avatar.has-img, .chat-header-avatar.has-img, .me-avatar.has-img, .pf-avatar.has-img { background: none; color: transparent; }
+
+/* Presence-aware dot colours (base green/grey come from .contact-online-dot). */
+.contact-online-dot.online.pr-busy { background: #d9534f; box-shadow: 0 0 0 3px rgba(217,83,79,.2); }
+.contact-online-dot.online.pr-away { background: #e0a63c; box-shadow: 0 0 0 3px rgba(224,166,60,.2); }
+
+/* Profile editor modal. */
+/* .profile-modal is only a hook too. The widths were 340px here, 360px on
+   .hex-modal, 420px on .group-box and 340px on .nettest-modal: four window sizes
+   in one application. Now there is one, from --dlg-w. */
+.pf-avatar-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+.pf-avatar {
+  width: 64px; height: 64px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-ava, inherit); font-size: 24px; font-weight: 600;
+}
+.pf-avatar-actions { display: flex; flex-direction: column; gap: 6px; }
+.pf-label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 5px 2px; }
+.hex-modal input.pf-input { margin-bottom: 14px; }
+.pf-presence { display: flex; gap: 8px; margin-bottom: 18px; }
+.pf-pr {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 6px; border-radius: 9px; border: 1px solid var(--border);
+  background: transparent; color: var(--muted); font-family: var(--font);
+  font-size: var(--fs-sm); font-weight: 500; cursor: pointer; transition: all .14s ease;
+}
+.pf-pr:hover { background: var(--bg3); color: var(--text); }
+.pf-pr.active { border-color: var(--accent); color: var(--text); background: var(--bg3); }
+.pf-pr-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── Frosted overlay bars: the feed scrolls UNDER a translucent header and ──
+   composer, so messages stay visible (blurred) through them. #chat-top and
+   #chat-bottom float above the feed; .messages-wrap is padded by their real
+   heights (set live via ResizeObserver in initFeedInsets) so the first/last
+   message never hides behind a bar — this survives textarea growth, the
+   reply/edit panels, the in-chat search bar, and iOS safe-area insets. */
+#chat-top {
+  position: absolute; top: 0; left: 0; right: 0; z-index: var(--z-header);
+}
+#chat-bottom {
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: var(--z-header);
+}
+/* The header and the composer are the only surfaces with content genuinely moving
+   underneath all the time. Glass is justified here and made stronger than
+   elsewhere: more blur, a denser background (otherwise the peer's name is lost on
+   the bubbles running past below) and an inner light edge — that edge is what the
+   eye reads as "glass" rather than as mere blur. */
+.chat-header {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border-bottom-color: var(--glass-border);
+  box-shadow: inset 0 -1px 0 var(--glass-line);
+}
+.input-area {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border-top-color: var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-line);
+}
+/* The feed does not break off under the panel along a hard line but dissolves: a
+   strip of gradient a couple of dozen pixels tall right at the edge. That is what
+   separates "we added a blur" from an assembled interface. */
+#chat-top::after, #chat-bottom::before {
+  content: ''; position: absolute; left: 0; right: 0; height: 20px;
+  pointer-events: none;
+}
+#chat-top::after {
+  top: 100%;
+  background: linear-gradient(to bottom, var(--bg) 0%, transparent 100%);
+  opacity: .5;
+}
+#chat-bottom::before {
+  bottom: 100%;
+  background: linear-gradient(to top, var(--bg) 0%, transparent 100%);
+  opacity: .5;
+}
+/* Feed fills the whole chat pane; padding keeps content clear of the bars. */
+.messages-wrap {
+  padding-top: calc(var(--feed-pad-top, 62px) + 6px) !important;
+  padding-bottom: calc(var(--feed-pad-bottom, 70px) + 6px) !important;
+}
+/* Browsers without backdrop-filter (older Firefox): fall back to near-opaque
+   bars so text never sits on a see-through background it can't read. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .chat-header, .input-area { background: var(--bg2); }
+}
+
+/* ── Header search button ─────────────────────────────────────────────────── */
+.chat-hdr-btn {
+  background: none; border: none; cursor: pointer; padding: 4px 8px;
+  display: flex; align-items: center; color: var(--muted); transition: color .15s;
+  flex-shrink: 0;
+}
+.chat-hdr-btn:hover { color: var(--text); }
+
+/* ── In-chat search bar ───────────────────────────────────────────────────── */
+.chat-search-bar {
+  display: none; align-items: center; gap: 8px;
+  padding: 8px 16px; border-bottom: 1px solid rgba(255, 255, 255, .04);
+  background: rgba(22, 23, 29, .22);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  flex-shrink: 0; z-index: 9;
+}
+.chat-search-bar.open { display: flex; }
+.chat-search-bar .csb-ico { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; }
+.chat-search-bar input {
+  flex: 1; min-width: 0; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 7px 12px; color: var(--text);
+  font-family: var(--font); font-size: 16px; outline: none; /* 16px: iOS does not zoom */
+  -webkit-text-size-adjust: 100%;
+}
+@media (min-width: 601px) { .chat-search-bar input { font-size: 13.5px; } }
+.chat-search-bar input:focus { border-color: var(--accent); }
+.csb-count { font-size: 12px; color: var(--muted); min-width: 34px; text-align: center; flex-shrink: 0; }
+.csb-nav {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  padding: 4px; display: flex; align-items: center; border-radius: var(--radius-xs); flex-shrink: 0;
+}
+.csb-nav svg { width: 18px; height: 18px; }
+.csb-nav:hover { color: var(--text); background: var(--bg3); }
+/* Current in-chat search hit. */
+.msg-bubble.csb-current { outline: 2px solid var(--online); outline-offset: 1px; }
+
+/* ── Reactions: separate row under the bubble, no size jump (task #7) ──────────
+   The bubble and the reactions sit in the .msg-col column. The reactions form a
+   separate row under the bubble: the bubble's own size stays stable, nothing is
+   clipped by an edge or a rounding, and the chips are aligned to the message side
+   (left for incoming, right for outgoing). */
+.msg-col { display: inline-flex; flex-direction: column; max-width: 62%; min-width: 0; }
+.msg-col > .msg-bubble { max-width: 100%; }
+.msg-row.out .msg-col { align-items: flex-end; }
+.msg-row.in  .msg-col { align-items: flex-start; }
+.reactions-bar { position: static !important; margin: 4px 2px 0 !important; gap: 4px; }
+/* A pill chip with an emoji plus a counter, aligned to the baseline. */
+.reaction-chip {
+  background: var(--bg2); box-shadow: 0 1px 3px rgba(0,0,0,.3);
+  padding: 1px 7px; line-height: 1.55;
+}
+
+/* ── Edited label: "14:32 · edited", right after the time (task #8) ────────── */
+.msg-edited { font-style: normal; color: var(--muted); margin-left: 4px; margin-right: 0; opacity: .85; }
+
+/* ── Group manage button in header — always tappable, incl. mobile portrait ── */
+#group-info-btn { border-radius: var(--radius-sm); }
+#group-info-btn:active { background: var(--bg3); }
+
+/* ── Network test modal ───────────────────────────────────────────────────── */
+/* .nettest-modal is only a hook for the markup: the width comes from the shared
+   --dlg-w. Its own value (340px) was the fourth in the application. */
+.nt-list { display: flex; flex-direction: column; gap: 9px; margin: 8px 0 14px; }
+.nt-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.nt-ico { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
+.nt-name { color: var(--text); flex: 1; }
+.nt-detail { color: var(--muted); font-size: 12px; text-align: right; }
+.nt-wait .nt-ico { animation: ntpulse 1s ease-in-out infinite; }
+.nt-ok .nt-ico { background: var(--online); box-shadow: 0 0 0 3px rgba(52,200,138,.18); }
+.nt-fail .nt-ico { background: var(--danger); box-shadow: 0 0 0 3px rgba(229,83,75,.18); }
+/* It was #e5875b — a literal chosen for a dark background: on a light one it gave
+   2.37 against a requirement of 4.5. The --warning token is described for both themes. */
+.nt-fail .nt-detail { color: var(--warning); }
+@keyframes ntpulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.nt-hint { font-size: 11.5px; color: var(--muted); line-height: 1.45; margin-bottom: 16px; }
+
+/* ── Download button over images / videos ─────────────────────────────────── */
+.media-wrap { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+.media-dl-btn {
+  position: absolute; top: 8px; right: 8px;
+  width: 32px; height: 32px; border-radius: var(--radius-sm); border: none; cursor: pointer;
+  background: rgba(15, 16, 21, .6); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .15s, background .15s;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.media-dl-btn svg { width: 17px; height: 17px; }
+.media-dl-btn:hover { background: rgba(15, 16, 21, .85); }
+.media-wrap:hover .media-dl-btn { opacity: 1; }
+/* Touch devices have no hover — keep the button visible. */
+@media (hover: none) { .media-dl-btn { opacity: .9; } }
+
+/* ── Grid alignment: sidebar & chat headers share one baseline height ─────── */
+@media (min-width: 601px) {
+  .sidebar-header, .chat-header {
+    min-height: 60px; padding-top: 0; padding-bottom: 0; align-items: center;
+  }
+  .sidebar-header { padding-left: 16px; padding-right: 16px; }
+  .chat-header { padding-left: 20px; padding-right: 20px; }
+}
+
+/* ── Call log entries (media_type:'call') ── */
+.call-log { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+.call-log-ico { display: inline-flex; }
+.call-log-ico svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
+.call-log-arrow { opacity: .6; font-size: 12px; }
+.call-log.missed { color: var(--danger); }
+.call-log.missed .call-log-ico svg { stroke: var(--danger); }
+
+/* ═══════════════ Reliability · Voice messages · Link previews ═══════════════ */
+
+/* ── Offline banner: appears while the socket is down and there are queued
+   messages, so the "clock" status on a bubble is self-explanatory. ── */
+.offline-banner {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 84px);
+  transform: translateX(-50%) translateY(8px);
+  max-width: min(92vw, 460px); z-index: 60;
+  background: rgba(22, 23, 29, .92); color: var(--text);
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  border: 1px solid rgba(255,255,255,.08); border-radius: var(--radius-md);
+  padding: 9px 14px; font-size: var(--fs-sm); text-align: center;
+  box-shadow: 0 8px 30px rgba(0,0,0,.4);
+  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+}
+.offline-banner.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── Mic button (composer) ── */
+.mic-btn {
+  width: 42px; height: 42px; border-radius: var(--radius-md); flex-shrink: 0;
+  background: var(--bg3); border: 1px solid var(--border); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, transform .1s;
+}
+@media (hover: hover) and (pointer: fine) {
+  .mic-btn:hover { background: var(--bg4); }
+}
+.mic-btn:active { transform: scale(.92); }
+.mic-btn svg { width: 20px; height: 20px; stroke: var(--muted); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── Recording bar ── */
+.voice-rec-bar {
+  display: none; align-items: center; gap: 12px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--bg2); border-top: 1px solid var(--border);
+}
+.voice-rec-bar.active { display: flex; }
+.voice-rec-cancel, .voice-rec-send {
+  width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; border: none;
+}
+.voice-rec-cancel { background: var(--bg3); }
+.voice-rec-cancel svg { width: 18px; height: 18px; stroke: var(--danger); fill: none; stroke-width: 2; stroke-linecap: round; }
+.voice-rec-send { background: var(--accent); }
+.voice-rec-send svg { width: 18px; height: 18px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.voice-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #e5453b; flex-shrink: 0; animation: recPulse 1s ease-in-out infinite; }
+@keyframes recPulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+.voice-rec-time { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text); flex-shrink: 0; min-width: 34px; }
+.voice-rec-wave { flex: 1; display: flex; align-items: center; gap: 2px; height: 24px; overflow: hidden; }
+.voice-rec-wave span { flex: 1; background: var(--accent); border-radius: 2px; height: 30%; animation: recWave 1s ease-in-out infinite; }
+.voice-rec-wave span:nth-child(3n) { animation-delay: .15s; }
+.voice-rec-wave span:nth-child(3n+1) { animation-delay: .35s; }
+@keyframes recWave { 0%,100% { height: 20%; } 50% { height: 90%; } }
+
+/* ── Voice message bubble ── */
+.voice-msg { display: flex; align-items: center; gap: 10px; min-width: 190px; padding: 2px 0; }
+.voice-play {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; cursor: pointer; border: none;
+  background: var(--accent); display: flex; align-items: center; justify-content: center;
+}
+.voice-play svg { width: 16px; height: 16px; fill: #fff; }
+.voice-wave { flex: 1; display: flex; align-items: center; gap: 2px; height: 28px; }
+.voice-wave span {
+  flex: 1; min-width: 2px; border-radius: 2px; height: 40%;
+  background: currentColor; opacity: .32; transition: opacity .1s;
+}
+.voice-wave span.on { opacity: .95; }
+.voice-dur { font-variant-numeric: tabular-nums; font-size: var(--fs-xs); opacity: .8; flex-shrink: 0; min-width: 30px; text-align: right; }
+.voice-rate {
+  font-size: var(--fs-xs); font-weight: 600; cursor: pointer; flex-shrink: 0;
+  background: rgba(255,255,255,.12); color: inherit; border: none; border-radius: var(--radius-sm); padding: 2px 6px;
+}
+
+/* ── Inline links & Open Graph preview card ── */
+.msg-link { color: #6db3ff; text-decoration: none; word-break: break-all; }
+.msg-link:hover { text-decoration: underline; }
+.lp-slot:empty { display: none; }
+.lp-card {
+  display: flex; margin-top: 6px; border-radius: var(--radius-md); overflow: hidden;
+  background: rgba(0,0,0,.18); border: 1px solid rgba(255,255,255,.08);
+  text-decoration: none; color: inherit; max-width: 320px;
+  border-left: 3px solid var(--accent);
+}
+.lp-card:hover { background: rgba(0,0,0,.28); }
+.lp-img { width: 76px; flex-shrink: 0; background-size: cover; background-position: center; background-repeat: no-repeat; }
+.lp-body { padding: 8px 10px; min-width: 0; }
+.lp-site { font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; opacity: .6; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lp-title { font-size: 13px; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lp-desc { font-size: 11.5px; opacity: .75; margin-top: 3px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ══ Sidebar: a single row (logo + profile + settings menu) ═══════════════════ */
+/* The logo is now compact and lives in the profile row rather than in its own bar. */
+.sidebar-logo { width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0; }
+.sidebar-logo svg { width: 15px; height: 15px; }
+.sidebar-me { cursor: default; }
+.me-avatar, .me-meta { cursor: pointer; }
+.me-avatar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.sidebar-settings { position: relative; flex-shrink: 0; }
+.me-settings-btn {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  width: 30px; height: 30px; border-radius: 8px; display: flex;
+  align-items: center; justify-content: center; transition: background .12s, color .12s;
+}
+.me-settings-btn svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
+.me-settings-btn:hover,
+.me-settings-btn[aria-expanded="true"] { background: var(--bg4); color: var(--text); }
+
+/* A reusable dropdown primitive (future menus are built on these classes). */
+.dropdown-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; min-width: 190px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 5px; z-index: 320; display: none; flex-direction: column; gap: 2px;
+  box-shadow: 0 10px 30px -10px rgba(0,0,0,.6);
+}
+.dropdown-menu.open { display: flex; animation: ddIn .13s ease both; }
+@keyframes ddIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.dropdown-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: none; text-align: left;
+  padding: 9px 10px; border-radius: 7px;
+  font-size: 13px; color: var(--text); transition: background .1s;
+}
+.dropdown-item:hover, .dropdown-item:focus-visible { background: var(--bg3); outline: none; }
+.dropdown-item svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; flex-shrink: 0; }
+.dropdown-item.danger { color: var(--danger-soft); }
+.dropdown-item.danger:hover { background: rgba(224,92,92,.12); }
+.dropdown-divider { height: 1px; background: var(--border); margin: 4px 2px; }
+
+/* ══ Contacts: the name and preview always truncate, the width is even, no horizontal scroll ══ */
+.contacts-list { overflow-x: hidden; }
+.contact-item { min-width: 0; }
+.contact-info { min-width: 0; overflow: hidden; }
+.contact-name,
+.contact-preview {
+  display: block; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The attachment icon is inline so the preview ellipsis works (rather than flex). */
+.contact-preview .att-ico { display: inline-block; vertical-align: -2px; margin-right: 5px; }
+
+/* ══ Wider bubbles on mobile ═════════════════════════════════════════════════
+   Bubbles already adapt to their content; on a phone the overall width ceiling was
+   only 62% (.msg-col), which made long messages look narrow with emptiness on the
+   right. We raise the ceiling to 86% — short ones stay compact, long ones take
+   nearly the full width. Desktop is left alone. */
+@media (max-width: 600px) {
+  .msg-col { max-width: 86%; }
+}
+
+/* ── Icon buttons in the chat header and "collapse call" ──────────────────────
+   The hover states used to be inline (onmouseover="this.style.color=…") — they had
+   to be removed for a CSP without 'unsafe-inline'; CSS is where they belong. The
+   values match the old ones exactly, the appearance does not change. */
+#group-info-btn:hover,
+.call-start-btn:hover,
+#chat-search-btn:hover { color: var(--text); }
+
+#minimize-call-btn:hover { background: var(--bg4); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Markup in messages (see web/js/richtext.js)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Inside code blocks the bubble's pre-wrap is not needed — <pre> has its own layout. */
+.msg-bubble .md-codebox { white-space: normal; }
+
+.md-inline-code {
+  font-family: var(--mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .92em;
+  background: var(--code-bg);
+  color: var(--code-text);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  /* anywhere, not break-all: a long path wraps, a short command does not. */
+  overflow-wrap: anywhere;
+}
+/* In an outgoing bubble the background is already blue — code on it needs to be
+   lighter, otherwise it merges. A theme token does not fit here: the colour
+   depends on the ground. */
+.msg-row.out .md-inline-code { background: rgba(255,255,255,.14); color: inherit; }
+
+.md-codebox {
+  margin: 6px 0 2px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--code-bg);
+  overflow: hidden;
+}
+.md-codehead {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 8px 4px 10px;
+  border-bottom: 1px solid var(--glass-border);
+  font-size: var(--fs-xs);
+}
+.md-codelang { color: var(--muted); text-transform: lowercase; letter-spacing: .3px; }
+.md-copy {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font-size: var(--fs-xs); padding: 2px 6px; border-radius: var(--radius-xs);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.md-copy:active { transform: scale(.94); }
+.md-code {
+  margin: 0; padding: 8px 10px;
+  font-family: var(--mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px; line-height: 1.5;
+  color: var(--code-text);
+  /* The code scrolls itself rather than stretching the bubble: a long command
+     line must not change the width of the whole feed. */
+  overflow-x: auto;
+  white-space: pre;
+}
+.msg-row.out .md-code, .msg-row.out .md-codebox { color: inherit; }
+
+.md-quote {
+  margin: 4px 0;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--glass-border);
+  color: var(--muted);
+}
+.msg-row.out .md-quote { border-left-color: rgba(255,255,255,.25); color: inherit; opacity: .85; }
+
+/* ── The "send as code" button in the composer ──────────────────────────── */
+.fmt-btn {
+  flex-shrink: 0;
+  width: 34px; height: 34px; padding: 0;
+  background: none; border: none; cursor: pointer;
+  color: var(--muted);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast), transform .1s;
+}
+.fmt-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+.fmt-btn:active { transform: scale(.9); }
+/* The enabled state is deliberate: the user must see that the next message will
+   go out as code BEFORE sending, not learn it from the feed. */
+.fmt-btn.active { background: var(--accent); color: #fff; }
+@media (hover: hover) and (pointer: fine) {
+  .fmt-btn.active:hover { background: var(--accent2); color: #fff; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Interface response
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* The appearance of a message is already implemented above (.msg-row.msg-in +
+   @keyframes msgIn) and is attached in renderMessages only to the last arrived
+   message. We do not introduce a second mechanism here. */
+
+/* Keyboard focus is visible everywhere. That is both accessibility and the thing
+   asked about in a corporate procurement review. :focus-visible rather than
+   :focus — the ring must not appear on a mouse click. */
+/* Input fields are NOT included here: the composer and the search rows have their
+   own focus styling, and a general ring on top of it read as an error highlight.
+   The ring is needed where it would otherwise be unclear where Enter will land —
+   on buttons and list rows. */
+button:focus-visible, .ctx-item:focus-visible, .contact-item:focus-visible,
+.dropdown-item:focus-visible, .attach-item:focus-visible, .fwd-item:focus-visible,
+.archive-row:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Buttons respond to a press. Without that the interface feels like a picture:
+   the cursor reacts, the element does not. */
+.send-btn, .mic-btn, .attach-btn, .chat-hdr-btn, .me-settings-btn {
+  transition: background var(--transition-fast), color var(--transition-fast), transform .1s;
+  border-radius: var(--radius-sm);
+}
+.send-btn:active, .mic-btn:active, .attach-btn:active,
+.chat-hdr-btn:active, .me-settings-btn:active { transform: scale(.9); }
+.chat-header-avatar { transition: transform .12s, box-shadow .12s; }
+
+/* A hover highlight — ONLY where there is a real cursor.
+   On a touch screen :hover is not cleared after a tap: it hangs until the finger
+   touches something else. Because of that the send button stayed grey after being
+   pressed (--bg3 over the blue) and only got its colour back on the next touch.
+   hover:hover + pointer:fine separates a mouse from a finger. */
+@media (hover: hover) and (pointer: fine) {
+  .send-btn:hover, .mic-btn:hover, .attach-btn:hover,
+  .chat-hdr-btn:hover, .me-settings-btn:hover { background: var(--bg3); }
+  .fmt-btn:hover { background: var(--bg3); color: var(--text); }
+  .md-copy:hover { background: var(--bg4); color: var(--text); }
+  .chat-header-avatar:hover { transform: scale(1.06); box-shadow: 0 0 0 2px var(--glass-line); }
+}
+
+/* ── The "down" button + the unread counter in an open chat ─────────────── */
+.scroll-down-btn {
+  position: absolute; right: 18px;
+  bottom: calc(var(--feed-pad-bottom, 70px) + 14px);
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-md);
+  color: var(--text); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  z-index: calc(var(--z-header) - 1);
+  opacity: 0; visibility: hidden; transform: translateY(8px);
+  transition: opacity var(--transition), transform var(--transition), visibility var(--transition);
+}
+.scroll-down-btn.visible { opacity: 1; visibility: visible; transform: none; }
+.scroll-down-btn:hover { background: var(--bg3); }
+.scroll-down-btn:active { transform: scale(.92); }
+.scroll-down-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; }
+.scroll-down-count {
+  position: absolute; top: -4px; right: -4px;
+  min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--forest); color: #cfe9db;
+  font-size: 10px; font-weight: 700; text-align: center;
+}
+
+/* Respecting prefers-reduced-motion. The general rule in this file already kills
+   animations; here we additionally remove the transform response so that nothing
+   "jumps" for those it bothers. */
+@media (prefers-reduced-motion: reduce) {
+  .msg-row.msg-in { animation: none; }
+  .send-btn:active, .mic-btn:active, .attach-btn:active,
+  .chat-hdr-btn:active, .me-settings-btn:active,
+  .fmt-btn:active, .md-copy:active, .scroll-down-btn:active { transform: none; }
+  .chat-header-avatar:hover { transform: none; }
+}
+
+
+/* ══ Mobile composer ═════════════════════════════════════════════════════════
+   This block must come after the glass rules above: the selectors have equal
+   specificity (.input-area), so whichever comes later wins. These rules used to
+   sit in the general mobile block in the middle of the file — and the glass
+   silently overrode them.
+
+   On a phone the input field matters more than anything else in this row: the
+   padding and gaps are tightened and the freed space goes to the field. The
+   panel's glass stays — it is the look of the product. */
+@media (max-width: 600px) {
+  .input-area {
+    padding: 8px 8px;
+    gap: 2px;
+    align-items: flex-end;
+    /* On a phone the panel is fully transparent: no background, no blur, no
+       divider line. Readability does not come from it — the input field and the
+       buttons have their own opaque background and hold up on their own.
+       Everything the panel used to do was cover the message text passing under it. */
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-top: none;
+    box-shadow: none;
+  }
+
+  /* The mask above the composer is removed as well: it painted a var(--bg) strip
+     and cut the text off with a hard line even BEFORE the panel — that is, it did
+     exactly what we are moving away from here. */
+  #chat-bottom::before { display: none; }
+
+  /* ── The strip under the input field ───────────────────────────────────
+     The safe-area padding used to be PART of the composer, so its glassy
+     background stretched to the very bottom of the screen — under the Android
+     gesture bar or the iPhone home indicator that gave a solid slab a finger tall.
+
+     Now the padding is moved into a separate transparent strip UNDER the
+     composer. It is still part of the height of #chat-bottom, so --feed-pad-bottom
+     accounts for it and the last message at rest still stands above it — nothing
+     is hidden. But while scrolling the feed is visible through it right to the
+     edge of the screen, and the app stops being cut off by a bar.
+
+     env(safe-area-inset-bottom, 0px) with a default value: where there is no
+     cut-out (an ordinary browser, a desktop in a narrow window) the strip is
+     simply zero and the appearance does not change.
+
+     The height is put into a variable not for elegance: the real safe area comes
+     from the operating system, and in a headless browser it is always zero — that
+     is, there is no other way to check this strip with an automated test. With the
+     variable a test substitutes a non-zero value and measures the real layout.
+
+     A ceiling of 12px. A full cut-out is up to ~48px on Android with three
+     buttons, and that much emptiness at the bottom is unjustified: there will
+     never be messages in the strip (the feed reserves its height with padding —
+     that is what the strip is for), so it reads as a solid slab whether it is
+     painted or not. 12px is enough to keep the buttons off the gesture bar, and
+     the rest of the space goes to the conversation — as in the Telegram web
+     client. There are two variables rather than one so that the ceiling can be
+     checked by a test: --safe-raw is substituted, --safe-bottom is computed from it. */
+  #chat-bottom {
+    --safe-raw: env(safe-area-inset-bottom, 0px);
+    --safe-bottom: min(var(--safe-raw), 12px);
+  }
+  #chat-bottom::after {
+    content: '';
+    display: block;
+    height: var(--safe-bottom);
+    pointer-events: none;
+  }
+  .msg-textarea {
+    border-radius: 21px;
+    min-height: 40px;
+    padding: 9px 14px;
+    /* A scrollbar inside the field on a phone only gets in the way: the field
+       grows to max-height by itself, and the thumb overlaps the text on the right.
+       Scrolling stays — by finger, just without a visible bar. */
+    scrollbar-width: none;
+  }
+  .msg-textarea::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+  /* The buttons are round and level with the field in height. A 36px rounded
+     square next to a 42px pill-shaped field read as misaligned: a different shape
+     and noticeably smaller. A circle of the same diameter as the field height puts
+     them in one row without eyeballing. */
+  .send-btn, .attach-btn, .mic-btn {
+    width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+  }
+  .fmt-btn { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; }
+  /* The icons inside are slightly larger — in a 42px circle the old 18px got lost. */
+  .attach-btn svg, .send-btn svg { width: 20px; height: 20px; }
+
+  /* ── Microphone ↔ send ────────────────────────────────────────────────
+     While the field is empty there is nothing to send, and the button takes up
+     space — noticeable on a phone. We show it instead of the microphone once text
+     appears in the field. It is hidden with display rather than opacity: an
+     invisible but clickable send button is worse than an absent one.
+     On a phone only: on a desktop there is room, and a disappearing button reads
+     as a breakage there. */
+  .input-area .send-btn { display: none; }
+  .input-area.has-text .send-btn { display: flex; }
+  .input-area.has-text .mic-btn { display: none; }
+}
+
+/* ══ Viewing an image on top of the app (js/lightbox.js) ═══════════════════
+   An overlay rather than a new tab: in an installed PWA window.open took you to an
+   external browser, and the only way back to the chat was through the app list.
+   Here the chat stays in place under the overlay. */
+.lightbox {
+  position: fixed; inset: 0; z-index: var(--z-modal);
+  display: none; align-items: center; justify-content: center;
+  /* Its own background, not a token: under an image a neutral dark is needed in
+     BOTH themes — a photograph cannot be examined on a light ground. */
+  background: rgba(8, 9, 12, .92);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  padding: 56px 16px 24px;
+  /* A tap on the backdrop closes it — so the backdrop must catch events. */
+  touch-action: none;
+}
+.lightbox.open { display: flex; animation: lbIn .14s ease; }
+@keyframes lbIn { from { opacity: 0; } to { opacity: 1; } }
+
+.lightbox-img {
+  max-width: 100%; max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  /* While the image loads src is empty — an empty <img> must not collapse into a
+     frame with a "broken" icon. */
+  display: block;
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .8);
+}
+.lightbox.loading .lightbox-img { visibility: hidden; }
+
+.lightbox-bar {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px calc(10px) 16px;
+  padding-top: max(10px, env(safe-area-inset-top));
+}
+.lightbox-caption {
+  flex: 1; min-width: 0;
+  color: rgba(255, 255, 255, .82); font-size: var(--fs-sm);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lightbox-btn {
+  width: 38px; height: 38px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 50%; cursor: pointer;
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  transition: background .15s, transform .1s;
+}
+.lightbox-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.lightbox-btn:active { transform: scale(.92); }
+@media (hover: hover) and (pointer: fine) {
+  .lightbox-btn:hover { background: rgba(255, 255, 255, .2); }
+}
+
+/* The spinner circle while the image has not arrived. */
+.lightbox-spinner { display: none; }
+.lightbox.loading .lightbox-spinner {
+  display: block; width: 26px; height: 26px;
+  border: 2px solid rgba(255, 255, 255, .25);
+  border-top-color: #fff; border-radius: 50%;
+  animation: lbSpin .7s linear infinite;
+}
+@keyframes lbSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .lightbox.open { animation: none; }
+  .lightbox.loading .lightbox-spinner { animation-duration: 2s; }
+}
+
+/* An image in the feed — the cursor hints that it can be opened. */
+.msg-image { cursor: zoom-in; }
+
+/* The recipient picker when forwarding: a highlight only under the cursor,
+   otherwise the row stays highlighted after a tap (see the story with the send
+   button — the same cause). */
+.fwd-item:hover { background: none; }
+@media (hover: hover) and (pointer: fine) {
+  .fwd-item:hover { background: var(--bg4); }
+}
+
+/* Images in the feed and in the viewer: a long press and the right button no
+   longer open the system menu with the file address — that is, they no longer show
+   "8a8fc76588181a30b8a6b65919cd9983.jpg (4320×1508)". The Download button next to
+   it does the same thing meaningfully and with the real file name. */
+.msg-image, .lightbox-img {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  user-select: none; -webkit-user-select: none;
+}
+
+/* ══ Grouping consecutive messages ═════════════════════════════════════════
+   Three messages in a row from one person are one thought, not three cards.
+   The gap between them is tightened, and on a continuation the corner on the
+   sender's side is squared off: the bubble "tail" is drawn only on the last
+   message of a group, and the feed reads as vertical blocks rather than a
+   scattering. */
+.msg-row.grouped { margin-top: 2px; }
+.msg-row.grouped.in  .msg-bubble { border-top-left-radius: var(--radius-xs); }
+.msg-row.grouped.out .msg-bubble { border-top-right-radius: var(--radius-xs); }
+
+/* ── A message waiting for the network ────────────────────────────────────
+   Not an "error": the persistent outbox will send it on reconnect, it cannot be
+   lost. But "going out in 50 ms" needs to be distinguishable from "sitting and
+   waiting" — both used to have the same faint "···" badge. */
+.msg-row.queued .msg-bubble { opacity: .62; }
+.msg-row.queued .msg-status::after {
+  content: '';
+  display: inline-block; width: 5px; height: 5px; margin-left: 4px;
+  border-radius: 50%; background: currentColor;
+  animation: queuedPulse 1.4s ease-in-out infinite;
+  vertical-align: middle;
+}
+@keyframes queuedPulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .msg-row.queued .msg-status::after { animation: none; opacity: .6; }
+}
+
+/* ── The selected search result (up/down arrows) ────────────────────────── */
+.search-hit.sr-active {
+  background: var(--bg3);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* ══ Scrollbars visible everywhere ══════════════════════════════════════════
+   The global rule above set ONLY width — for horizontal scrolling the height
+   stayed at the system value, and on macOS/iOS the system bars are overlays and
+   invisible until you start scrolling. On top of that the thumb was painted
+   --border, that is, a border colour rather than one contrasting with the ground:
+   in a code block it merged with the background completely. The recipient saw a
+   truncated line and had no idea it could be scrolled sideways — and that is
+   exactly the scenario that was broken.
+
+   Here: both axes, our own colour, and Firefox through scrollbar-color. The rules
+   are deliberately at the end of the file — the targeted "hide the bar" rules
+   (.messages-wrap and the input field on a phone) are more specific and keep
+   winning. */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 8px;
+  /* A transparent inward border: the thumb does not stick to the container edge
+     and does not look thicker than it is. */
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+@media (hover: hover) and (pointer: fine) {
+  ::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: content-box; }
+}
+/* Firefox: no pseudo-elements of its own, only these two properties. */
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+
+/* A code block is the very case from the report. Here the bar is always shown
+   rather than on hover: on a phone there is no hover at all, and it must be
+   immediately clear that the line is longer than the bubble. */
+.md-code {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+  /* Space for the bar is reserved so the last line of code does not hide under it
+     and the text does not jump when the scrollbar appears. */
+  padding-bottom: 10px;
+}
+.md-code::-webkit-scrollbar { height: 8px; }
+.md-code::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+/* In an outgoing bubble the ground is blue: a dark thumb from the light theme
+   would disappear on it just as it used to disappear on dark. The colour here
+   depends on the ground rather than on the theme — hence it is set separately
+   rather than through a token. */
+.msg-row.out .md-code {
+  scrollbar-color: rgba(255, 255, 255, .34) transparent;
+}
+.msg-row.out .md-code::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .34);
+  background-clip: content-box;
+}
+
+/* ── The edge of a code block: showing that the line continues ─────────────
+   The has-right/has-left classes are set by richtext.js from the actual scroll.
+   This is not decoration instead of a scrollbar but a replacement for it: overlay
+   scrollbars (macOS, iOS, Android) take no space and are invisible at rest, so the
+   recipient of a long command saw neither the bar nor the fact that the line was
+   cut off. The gradient is always visible while there is something to scroll. */
+.md-codebox { position: relative; }
+.md-codebox::after,
+.md-codebox::before {
+  content: '';
+  position: absolute; top: 0; bottom: 0; width: 26px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.md-codebox::after  { right: 0; background: linear-gradient(to left,  var(--code-edge), transparent); }
+.md-codebox::before { left: 0;  background: linear-gradient(to right, var(--code-edge), transparent); }
+.md-codebox.has-right::after { opacity: 1; }
+.md-codebox.has-left::before { opacity: 1; }
+
+/* An arrow at the edge: the gradient alone says "there is something there" but
+   does not say it is scrolling. A small chevron removes the guesswork. */
+.md-codebox.has-right::after {
+  background:
+    linear-gradient(to left, var(--code-edge), transparent),
+    /* the chevron itself, drawn as a background — no extra node in the feed */
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23a9b0c6' stroke-width='3' stroke-linecap='round'%3E%3Cpolyline points='9 18 15 12 9 6'/%3E%3C/svg%3E") right 5px center no-repeat;
+}
+/* In an outgoing bubble the ground is blue — the edge fade must be ITS colour,
+   otherwise a dark patch appears on the blue. */
+.msg-row.out .md-codebox { --code-edge: var(--bubble-out); }
