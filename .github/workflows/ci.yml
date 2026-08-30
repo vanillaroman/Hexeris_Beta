@@ -1,1 +1,112 @@
+# CI: conflict markers, both Go builds, vet, gofmt, unit and integration
+# tests (with -race) against a real Postgres, and a syntax check of every JS
+# file. A protected branch cannot be merged into until these pass.
+name: CI
 
+on:
+  push:
+    branches: [main, "feature/**", "white-label/**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # An unfinished merge leaves conflict markers; catch them immediately.
+  merge-markers:
+    name: No merge conflict markers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if conflict markers present
+        run: |
+          if git grep -nE '^(<<<<<<<|>>>>>>>)' -- .; then
+            echo "::error::Merge conflict markers found — the merge is incomplete."
+            exit 1
+          fi
+          echo "OK: no conflict markers."
+
+  server:
+    name: Go build, vet, gofmt & tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: hexeris_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          UNFORMATTED=$(gofmt -l server)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "gofmt needed on:"; echo "$UNFORMATTED"; exit 1
+          fi
+      - name: Build (default + ldap)
+        run: |
+          go build ./...
+          go build -tags ldap ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Tests (unit + integration, race detector)
+        env:
+          TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/hexeris_test?sslmode=disable
+        run: go test -race ./...
+
+  client:
+    name: JS syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: JS syntax check
+        run: |
+          set -e
+          for f in web/js/*.js web/sw.js; do node --check "$f"; done
+
+  # The image is the way most people will run this, so a broken Dockerfile is a
+  # broken product. Building is not enough on its own: the container used to
+  # build fine and then crash-loop, because UPLOAD_DIR did not exist inside a
+  # freshly created volume and the server refuses to start without it. So the
+  # stack is actually brought up and asked whether it is alive.
+  docker:
+    name: Docker image builds and the stack comes up
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t hexeris:ci .
+      - name: Start the development stack
+        run: docker compose up -d --build
+      - name: Wait for /healthz
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost/healthz >/dev/null 2>&1; then
+              echo "OK: the stack answers on /healthz after ${i}s."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::The stack did not answer on /healthz within 60s."
+          docker compose ps
+          docker compose logs --tail=80
+          exit 1
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
